@@ -1,0 +1,36 @@
+---
+- name: 强制删除 Techtile_Channel_Measurement 整个目录
+  hosts: ceiling
+  become: true         # 使用 sudo
+  vars:
+    # 请根据实际情况调整此路径
+    base_path: "/home/pi/Techtile_Channel_Measurement"
+
+  tasks:
+    - name: 检查目录是否存在
+      stat:
+        path: "{{ base_path }}"
+      register: base_stat
+
+    - name: 强制删除整个目录
+      shell: sudo rm -rf "{{ base_path }}"
+      args:
+        executable: /bin/bash
+      when: base_stat.stat.exists
+
+    - name: 验证删除结果
+      stat:
+        path: "{{ base_path }}"
+      register: verify_stat
+      failed_when: verify_stat.stat.exists
+      changed_when: false
+
+    - name: 输出最终结果
+      debug:
+        msg: >-
+          {{ base_path }} 
+          {% if verify_stat.stat.exists %}
+          删除失败，请检查权限或路径是否正确。
+          {% else %}
+          已成功删除！
+          {% endif %}
