@@ -1,6 +1,6 @@
 ---
 - name: Pull GitHub repository code on ceiling (SSH agent forwarding)
-  hosts: T01, BD
+  hosts: T01
   vars:
     ansible_ssh_common_args: "-o ForwardAgent=yes"   # 开启 agent 转发
   tasks:
