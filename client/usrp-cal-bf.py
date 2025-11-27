@@ -1053,7 +1053,8 @@ def main():
         alive_socket.send_string(f"{HOSTNAME} TX")
         alive_socket.close()
 
-        phase_corr=phi_LB - np.deg2rad(phi_cable) + np.deg2rad(phi_offset)
+        # phase_corr=phi_LB - np.deg2rad(phi_cable) + np.deg2rad(phi_offset)
+        phase_corr=phi_LB - np.deg2rad(phi_cable)
         logger.info("Phase correction in rad: %s", phase_corr)
         logger.info("Phase correction in degrees: %s", np.rad2deg(phase_corr))
 
