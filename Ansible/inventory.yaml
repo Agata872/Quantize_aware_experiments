@@ -73,6 +73,10 @@ all:
       ansible_host: rpi-t03.local
     T04:
       ansible_host: rpi-t04.local
+    T05:
+      ansible_host: rpi-t05.local
+    T06:
+      ansible_host: rpi-t06.local
     T07:
       ansible_host: rpi-t07.local
     T08:
@@ -843,22 +847,12 @@ all:
         G08:
         G09:
         G10:
-    BD:
+    Test:
       hosts:
-        T01:
-#        C05:
-#        C07:
-#        C08:
-#        C09:
-#        C10:
-#        C06:
-#        D05:
-        D07:
-        D08:
-        E07:
-        E08:
-#        F07:
-#        F08:
+        T05:
+        T06:
+        T07:
+        T08:
     All:
       hosts:
         A05:

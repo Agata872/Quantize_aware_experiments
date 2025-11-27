@@ -7,7 +7,7 @@ from enum import Enum
 
 import matplotlib.pyplot as plt
 
-ip = "192.108.1.219"
+ip = "192.108.2.61"
 
 rm = visa.ResourceManager()
 scope = rm.open_resource(f'TCPIP::{ip}::INSTR')

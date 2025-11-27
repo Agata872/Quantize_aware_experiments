@@ -5,7 +5,7 @@ from scope import Scope  # jouw class
 
 def save_phases():
     # === Maak Scope object aan en lees data ===
-    scope_obj = Scope(ip="192.108.1.219")
+    scope_obj = Scope(ip="192.108.2.61")
 
     # === Initialize scope
     if scope_obj.check_status():

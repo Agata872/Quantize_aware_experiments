@@ -1,33 +1,13 @@
 ---
-- name: Pull GitHub repository code on ceiling (SSH agent forwarding)
-  hosts: T01
-  vars:
-    ansible_ssh_common_args: "-o ForwardAgent=yes"   # 开启 agent 转发
+- name: Pull GitHub repo on ceiling (simplified)
+  hosts: Test
   tasks:
-    - name: Ensure ~/.ssh exists for pi
-      become: true
-      become_user: pi
-      ansible.builtin.file:
-        path: /home/pi/.ssh
-        state: directory
-        mode: "0700"
-
-    - name: Trust github.com host key (avoid 'Host key verification failed')
-      become: true
-      become_user: pi
-      ansible.builtin.known_hosts:
-        name: github.com
-        key: "{{ lookup('pipe','ssh-keyscan -t rsa,ecdsa,ed25519 github.com 2>/dev/null') }}"
-        path: /home/pi/.ssh/known_hosts
-        state: present
-
-    - name: Clone GitHub repository via SSH (uses forwarded agent)
+    - name: Clone Quantize_aware_experiments repo via HTTPS
       become: true
       become_user: pi
       ansible.builtin.git:
-        repo: "git@github.com:Agata872/Gnn_based_downlink_precoder_Deployment.git"
-        dest: "/home/pi/Gnn_based_downlink_precoder_Deployment"
-        version: "master"
-        accept_hostkey: true
+        repo: "https://github.com/Agata872/Quantize_aware_experiments.git"
+        dest: "/home/pi/Quantize_aware_experiments"
+        version: "master"   # 如果默认是 main，就改成 "main"
         update: true
         force: true
