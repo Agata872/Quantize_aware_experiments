@@ -25,7 +25,7 @@ if len(sys.argv) > 1:
     num_subscribers = int(sys.argv[2])
 else:
     delay = 10
-    num_subscribers = 4
+    num_subscribers = 1
 
 # Creates a socket instance
 context = zmq.Context()
@@ -67,6 +67,7 @@ print(f"Starting experiment: {unique_id}")
 current_file_path = os.path.abspath(__file__) 
 current_dir = os.path.dirname(current_file_path)
 parent_path = os.path.dirname(current_dir)
+os.makedirs(parent_path + "/data", exist_ok=True)
 output_path = os.path.join(parent_path, f"data/exp-{unique_id}.yml")
 
 with open(output_path, "w") as f:
