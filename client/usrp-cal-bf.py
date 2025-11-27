@@ -197,6 +197,9 @@ def rx_ref(usrp, rx_streamer, quit_event, duration, result_queue, start_time=Non
         logger.debug("Frequency offset CH0: %.4f", freq_slope_ch0 / (2 * np.pi))
         logger.debug("Frequency offset CH1: %.4f", freq_slope_ch1 / (2 * np.pi))
 
+        logger.debug("Phase offset CH0: %.4f", np.rad2deg(phase_ch0).mean())
+        logger.debug("Phase offset CH1: %.4f", np.rad2deg(phase_ch1).mean())
+
         phase_diff = tools.to_min_pi_plus_pi(phase_ch0 - phase_ch1, deg=False)
 
         # phase_diff = phase_ch0 - phase_ch1
@@ -1005,7 +1008,8 @@ def main():
         phi_LB = result_queue.get()
 
         # Print loopback phase
-        logger.info("Phase pilot reference signal: %s", phi_LB)
+        logger.info("Phase pilot reference signal in rad: %s", phi_LB)
+        logger.info("Phase pilot reference signal in degrees: %s", np.rad2deg(phi_LB))
 
         start_next_cmd += cmd_time + 2.0  # Schedule next command
 
@@ -1013,19 +1017,34 @@ def main():
         # STEP 3: Load cable phase correction from YAML configuration (if available)
         # -------------------------------------------------------------------------
         phi_cable = 0
-        with open(os.path.join(os.path.dirname(__file__), "config-phase-offsets.yml"), "r") as phases_yaml:
+        with open(os.path.join(os.path.dirname(__file__), "phase-reference-calibration.yml"), "r") as phases_yaml:
             try:
                 phases_dict = yaml.safe_load(phases_yaml)
                 if HOSTNAME in phases_dict.keys():
                     phi_cable = phases_dict[HOSTNAME]
                     logger.debug(f"Applying phase correction: {phi_cable}")
                 else:
+                    logger.error("Phase offset not found in phase-reference-calibration.yml")
+            except yaml.YAMLError as exc:
+                print(exc)
+
+        # -------------------------------------------------------------------------
+        # STEP 4: Add additional phase to ensure right measurement with the scope
+        # -------------------------------------------------------------------------
+        phi_offset = 0
+        with open(os.path.join(os.path.dirname(__file__), "config-phase-offsets.yml"), "r") as phases_yaml:
+            try:
+                phases_dict = yaml.safe_load(phases_yaml)
+                if HOSTNAME in phases_dict.keys():
+                    phi_cable = phases_dict[HOSTNAME]
+                    logger.debug(f"Applying phase correction: {phi_offset}")
+                else:
                     logger.error("Phase offset not found in config-phase-offsets.yml")
             except yaml.YAMLError as exc:
                 print(exc)
 
         # -------------------------------------------------------------------------
-        # STEP 4: Benchmark without phase-aligned beamforming
+        # STEP 5: Benchmark without phase-aligned beamforming
         # -------------------------------------------------------------------------
         
         alive_socket = context.socket(zmq.REQ)
@@ -1034,12 +1053,16 @@ def main():
         alive_socket.send_string(f"{HOSTNAME} TX")
         alive_socket.close()
 
+        phase_corr=phi_LB - np.deg2rad(phi_cable) + np.deg2rad(phi_offset)
+        logger.info("Phase correction in rad: %s", phase_corr)
+        logger.info("Phase correction in degrees: %s", np.rad2deg(phase_corr))
+
         tx_phase_coh(
             usrp,
             tx_streamer,
             quit_event,
             # phase_corr=phi_LB + phi_P + np.deg2rad(phi_cable),
-            phase_corr=phi_LB + np.deg2rad(phi_cable),
+            phase_corr=phi_LB - np.deg2rad(phi_cable) + np.deg2rad(phi_offset),
             at_time=start_next_cmd,
             long_time=False, # Set long_time True if you want to transmit longer than 10 seconds
         )
