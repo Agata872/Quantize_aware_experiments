@@ -179,9 +179,14 @@ def tx_ref(usrp, tx_streamer, quit_event, phase, amplitude, start_time):
         tx_streamer.send(np.zeros((num_channels, 0), dtype=np.complex64), tx_md)
         logger.info("TX finished.")
 
-def tx_thread(usrp, tx_streamer, quit_event, phase=[0, 0], amplitude=[0.8, 0.8], start_time=None):
-    tx_thr = threading.Thread(target=tx_ref, args=(usrp, tx_streamer, quit_event, phase, amplitude, start_time))
-    tx_thr.setName("TX_thread")
+def tx_thread(
+    usrp, tx_streamer, quit_event, phase=[0, 0], amplitude=[0.8, 0.8], start_time=None
+):
+    tx_thr = threading.Thread(
+        target=tx_ref,
+        args=(usrp, tx_streamer, quit_event, phase, amplitude, start_time),
+    )
+    tx_thr.name = "TX_thread"
     tx_thr.start()
     return tx_thr
 
