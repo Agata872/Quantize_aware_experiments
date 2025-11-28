@@ -849,7 +849,7 @@ all:
         G10:
     Test:
       hosts:
-        T03:
+        # T03:
         T05:
         T06:
         T07:
