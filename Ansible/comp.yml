@@ -1,0 +1,21 @@
+---
+- name: Run experiment script on all Test nodes
+  hosts: Test
+  gather_facts: no
+
+  vars:
+    python_path: "/usr/local/lib/python3.11/site-packages"
+
+  tasks:
+    - name: Ensure run_experiment.sh is executable
+      ansible.builtin.file:
+        path: ~/Quantize_aware_experiments/client/run_experiment.sh
+        mode: '0755'
+
+    - name: Run run_experiment.sh with custom PYTHONPATH
+      ansible.builtin.shell: |
+        export PYTHONPATH="{{ python_path }}:$PYTHONPATH"
+        cd ~/Quantize_aware_experiments/client
+        ./run_experiment.sh
+      args:
+        executable: /bin/bash

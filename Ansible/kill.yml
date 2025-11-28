@@ -1,21 +1,11 @@
----
-- name: Check and kill process on port 50002
-  hosts: BD
+- hosts: Test
   gather_facts: no
-  become: yes
-
   tasks:
-    - name: Check if any process is listening on port 50002
-      shell: sudo lsof -i :50002 -t
-      register: port_check
-      ignore_errors: yes
-
-    - name: Debug PIDs found
-      debug:
-        msg: "Found PID(s): {{ port_check.stdout_lines }}"
-      when: port_check.stdout != ""
-
-    - name: Kill process(es) listening on port 50002
-      shell: "kill -9 {{ item }}"
-      loop: "{{ port_check.stdout_lines }}"
-      when: port_check.stdout != ""
+    - name: Kill experiment by PID
+      shell: |
+        if [ -f ~/experiment.pid ]; then
+          kill -9 "$(cat ~/experiment.pid)" || true
+          rm -f ~/experiment.pid
+        fi
+      args:
+        executable: /bin/bash
