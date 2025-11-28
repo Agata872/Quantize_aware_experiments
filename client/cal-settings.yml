@@ -48,3 +48,6 @@ STOP_LB: 30
 
 # BF
 START_BF: 40
+
+# Gain setups
+PILOT_TX_GAIN: 88
