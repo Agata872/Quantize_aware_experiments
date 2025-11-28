@@ -30,7 +30,7 @@ HOSTNAME = socket.gethostname()[4:]
 file_open = False
 
 with open(
-    os.path.join(os.path.dirname(__file__), "usrp-settings.yml"), "r", encoding="utf-8"
+    os.path.join(os.path.dirname(__file__), "cal-settings.yml"), "r", encoding="utf-8"
 ) as file:
     vars = yaml.safe_load(file)
     globals().update(vars)  # update the global variables with the vars in yaml
@@ -212,22 +212,6 @@ def get_current_time(usrp):
 # Main function: run transmission task (after synchronization control)
 # -------------------------------
 def main():
-
-    try:
-        # Attempt to open and load calibration settings from the YAML file
-        with open(os.path.join(os.path.dirname(__file__), "cal-settings.yml"), "r") as file:
-            vars = yaml.safe_load(file)
-            globals().update(vars)  # update the global variables with the vars in yaml
-    except FileNotFoundError:
-        logger.error("Calibration file 'cal-settings.yml' not found in the current directory.")
-        exit()
-    except yaml.YAMLError as e:
-        logger.error(f"Error parsing 'cal-settings.yml': {e}")
-        exit()
-    except Exception as e:
-        logger.error(f"Unexpected error while loading calibration settings: {e}")
-        exit()
-
     try:
         # Initialize USRP device and load FPGA image
         usrp = uhd.usrp.MultiUSRP("enable_user_regs, fpga=usrp_b210_fpga_loopback_ctrl.bin, mode_n=integer")
