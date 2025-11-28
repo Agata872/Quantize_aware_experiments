@@ -204,7 +204,7 @@ def tx_async_th(tx_streamer, quit_event):
 
 def tx_meta_thread(tx_streamer, quit_event):
     tx_meta_thr = threading.Thread(target=tx_async_th, args=(tx_streamer, quit_event))
-    tx_meta_thr.setName("TX_META_thread")
+    tx_meta_thr.name = "TX_META_thread"
     tx_meta_thr.start()
     return tx_meta_thr
 
