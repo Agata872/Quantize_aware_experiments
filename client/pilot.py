@@ -224,7 +224,7 @@ def main():
         sync_context = zmq.Context()
         # Create REQ socket to communicate with server's "alive" port (5558)
         alive_client = sync_context.socket(zmq.REQ)
-        alive_client.connect(f"tcp://{SERVER_IP}:5558")
+        alive_client.connect(f"tcp://{server_ip}:5558")
         alive_message = f"{HOSTNAME} TX alive"
         logger.info("Sending alive message to sync server: %s", alive_message)
         alive_client.send_string(alive_message)
@@ -233,7 +233,7 @@ def main():
 
         # Create SUB socket to listen to sync messages (port 5557)
         sync_subscriber = sync_context.socket(zmq.SUB)
-        sync_subscriber.connect(f"tcp://{SERVER_IP}:5557")
+        sync_subscriber.connect(f"tcp://{server_ip}:5557")
         sync_subscriber.setsockopt_string(zmq.SUBSCRIBE, "")
         logger.info("Waiting for SYNC message from sync server...")
         sync_msg = sync_subscriber.recv_string()
