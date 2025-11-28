@@ -44,7 +44,7 @@ STOP_Pilot: 15
 
 # Loopback
 START_LB: 22
-STOP_LB: 35
+STOP_LB: 30
 
 # BF
-START_BF: 45
+START_BF: 40
