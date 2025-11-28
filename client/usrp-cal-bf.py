@@ -856,7 +856,6 @@ def main():
         logger.info("Scheduled pilot measurement start time: %.6f", START_Pilot)
         measure_pilot(
             usrp,
-            tx_streamer,
             rx_streamer,
             quit_event,
             result_queue,
