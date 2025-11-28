@@ -39,6 +39,6 @@ plt.legend()
 plt.xticks(rotation=45)
 plt.tight_layout()
 
-plt.savefig(parent_path + "/scope_phases.png")
+plt.savefig(os.path.join(parent_path, "processing/figure", "scope_phases.png"))
 
 # plt.show()
