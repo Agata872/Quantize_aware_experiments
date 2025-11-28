@@ -659,7 +659,7 @@ def measure_loopback(
         usrp,
         rx_streamer,
         quit_event,
-        duration=CAPTURE_TIME,
+        duration=stop_lb - start_lb,
         res=result_queue,
         start_time=start_time,
     )
