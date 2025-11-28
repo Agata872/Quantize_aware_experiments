@@ -212,6 +212,22 @@ def get_current_time(usrp):
 # Main function: run transmission task (after synchronization control)
 # -------------------------------
 def main():
+
+    try:
+        # Attempt to open and load calibration settings from the YAML file
+        with open(os.path.join(os.path.dirname(__file__), "cal-settings.yml"), "r") as file:
+            vars = yaml.safe_load(file)
+            globals().update(vars)  # update the global variables with the vars in yaml
+    except FileNotFoundError:
+        logger.error("Calibration file 'cal-settings.yml' not found in the current directory.")
+        exit()
+    except yaml.YAMLError as e:
+        logger.error(f"Error parsing 'cal-settings.yml': {e}")
+        exit()
+    except Exception as e:
+        logger.error(f"Unexpected error while loading calibration settings: {e}")
+        exit()
+
     try:
         # Initialize USRP device and load FPGA image
         usrp = uhd.usrp.MultiUSRP("enable_user_regs, fpga=usrp_b210_fpga_loopback_ctrl.bin, mode_n=integer")
@@ -254,8 +270,8 @@ def main():
         # After synchronization, schedule TX based on current time
 
         # A short delay (e.g., 0.2s) can be added to ensure TX starts after config
-        start_time_spec = uhd.types.TimeSpec(START_P1_TX)
-        logger.info("Scheduled TX start time: %.6f", START_P1_TX)
+        start_time_spec = uhd.types.TimeSpec(START_Pilot)
+        logger.info("Scheduled TX start time: %.6f", START_Pilot)
         # Start TX thread with amplitude=1.0, phase=0.0 (both channels)
 
         usrp.set_tx_antenna(PILOT_TX_ANT, PILOT_TX_CH)
@@ -269,13 +285,13 @@ def main():
             quit_event,
             phase=[0.0, 0.0],
             amplitude=amplitudes,
-            start_time=start_time_spec,
+            start_time=START_Pilot,
         )
         # Also start TX async metadata monitor thread
         tx_meta_thr = tx_meta_thread(tx_streamer, quit_event)
 
         # Stop transmission after a certain duration
-        time.sleep(STOP_P1_TX - get_current_time(usrp))
+        time.sleep(STOP_Pilot - get_current_time(usrp))
         quit_event.set()
         tx_thr.join()
         tx_meta_thr.join()

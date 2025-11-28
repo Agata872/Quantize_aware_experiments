@@ -869,8 +869,6 @@ def main():
         # Print pilot phase
         logger.info("Phase pilot reference signal: %s", phi_P)
 
-        start_next_cmd += cmd_time + 1.0  # Schedule next command after delay
-
         # -------------------------------------------------------------------------
         # STEP 2: Perform internal loopback measurement with reference signal
         # -------------------------------------------------------------------------
