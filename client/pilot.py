@@ -151,34 +151,99 @@ def setup(usrp):
 # -------------------------------
 # Transmission-related functions: tx_ref, tx_thread, tx_meta_thread
 # -------------------------------
-def tx_ref(usrp, tx_streamer, quit_event, phase, amplitude, start_time):
+# def tx_ref(usrp, tx_streamer, quit_event, phase, amplitude, start_time):
+#     num_channels = tx_streamer.get_num_channels()
+#     max_samps_per_packet = tx_streamer.get_max_num_samps()
+#     amplitude = np.asarray(amplitude)
+#     phase = np.asarray(phase)
+#     sample = amplitude * np.exp(phase * 1j)
+#     transmit_buffer = np.ones((num_channels, 1000 * max_samps_per_packet), dtype=np.complex64)
+
+#     transmit_buffer[0, :] *= sample[0]
+#     if num_channels > 1:
+#         transmit_buffer[1, :] *= sample[1]
+#     tx_md = uhd.types.TXMetadata()
+#     if start_time is not None:
+#         tx_md.time_spec = start_time
+#     else:
+#         tx_md.time_spec = uhd.types.TimeSpec(usrp.get_time_now().get_real_secs() + INIT_DELAY)
+#     tx_md.has_time_spec = True
+#     logger.info("TX will start at time: %.6f", tx_md.time_spec.get_real_secs())
+#     try:
+#         while not quit_event.is_set():
+#             tx_streamer.send(transmit_buffer, tx_md)
+#     except KeyboardInterrupt:
+#         logger.debug("CTRL+C pressed in TX")
+#     finally:
+#         tx_md.end_of_burst = True
+#         tx_streamer.send(np.zeros((num_channels, 0), dtype=np.complex64), tx_md)
+#         logger.info("TX finished.")
+
+def tx_ref(usrp, tx_streamer, quit_event, phase, amplitude, start_time=None):
+    """
+    Transmit a continuous reference signal on all active channels.
+
+    This function generates a complex baseband signal based on the provided
+    amplitude and phase values, then continuously transmits it using the
+    specified USRP transmit streamer until `quit_event` is set.
+
+    Args:
+        usrp: The USRP device instance.
+        tx_streamer: UHD transmit streamer used for sending samples.
+        quit_event: Threading event used to stop transmission when set.
+        phase (list or np.ndarray): Phase offset for each channel (in radians).
+        amplitude (list or np.ndarray): Amplitude for each channel.
+        start_time (uhd.types.TimeSpec, optional): Scheduled start time.
+            If None, transmission begins after `INIT_DELAY` seconds.
+
+    Notes:
+        - This function continuously sends the same buffer of complex samples.
+        - It is typically used to generate a reference signal for phase calibration.
+    """
+
+    # Retrieve USRP transmission parameters
     num_channels = tx_streamer.get_num_channels()
     max_samps_per_packet = tx_streamer.get_max_num_samps()
+
+    # Convert inputs to NumPy arrays for element-wise operations
     amplitude = np.asarray(amplitude)
     phase = np.asarray(phase)
-    sample = amplitude * np.exp(phase * 1j)
-    transmit_buffer = np.ones((num_channels, 1000 * max_samps_per_packet), dtype=np.complex64)
 
+    # Compute the complex signal for each channel: A * e^(j * phi)
+    sample = amplitude * np.exp(1j * phase)
+
+    # Initialize a large transmit buffer filled with the reference signal
+    transmit_buffer = np.ones(
+        (num_channels, 1000 * max_samps_per_packet), dtype=np.complex64
+    )
     transmit_buffer[0, :] *= sample[0]
-    if num_channels > 1:
-        transmit_buffer[1, :] *= sample[1]
+    transmit_buffer[1, :] *= sample[1]
+
+    # Create UHD transmit metadata (for timed transmission)
     tx_md = uhd.types.TXMetadata()
+
+    # Schedule the transmission start time
     if start_time is not None:
         tx_md.time_spec = start_time
     else:
-        tx_md.time_spec = uhd.types.TimeSpec(usrp.get_time_now().get_real_secs() + INIT_DELAY)
+        tx_md.time_spec = uhd.types.TimeSpec(
+            usrp.get_time_now().get_real_secs() + INIT_DELAY
+        )
+
     tx_md.has_time_spec = True
-    logger.info("TX will start at time: %.6f", tx_md.time_spec.get_real_secs())
+
     try:
+        # Continuously transmit the reference signal until quit_event is triggered
         while not quit_event.is_set():
             tx_streamer.send(transmit_buffer, tx_md)
+
     except KeyboardInterrupt:
-        logger.debug("CTRL+C pressed in TX")
+        logger.debug("CTRL+C detected — stopping transmission")
+
     finally:
+        # Send an end-of-burst (EOB) packet to properly terminate streaming
         tx_md.end_of_burst = True
         tx_streamer.send(np.zeros((num_channels, 0), dtype=np.complex64), tx_md)
-        logger.info("TX finished.")
-
 def tx_thread(
     usrp, tx_streamer, quit_event, phase=[0, 0], amplitude=[0.8, 0.8], start_time=None
 ):
