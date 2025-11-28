@@ -530,7 +530,10 @@ def starting_in(usrp, at_time):
     return f"Starting in {delta(usrp, at_time):.2f}s"
 
 
-def measure_pilot(usrp, tx_streamer, rx_streamer, quit_event, result_queue, at_time=None):
+def measure_pilot(
+    usrp, tx_streamer, rx_streamer, quit_event, result_queue,
+    start_pilot, stop_pilot,
+):
     """
     Perform a pilot measurement using the specified USRP device and RX streamer.
 
@@ -628,7 +631,12 @@ def measure_pilot(usrp, tx_streamer, rx_streamer, quit_event, result_queue, at_t
     # # Clear event for next use
     # quit_event.clear()
 
-
+    # ------------------------------------------------------------
+    # 0. Check pilot timing
+    # ------------------------------------------------------------
+    if stop_pilot <= start_pilot:
+        raise ValueError(f"stop_pilot ({stop_pilot}) must be > start_pilot ({start_pilot})")
+    
    # ------------------------------------------------------------
     # 1. Configure transmit signal amplitudes
     # ------------------------------------------------------------
@@ -636,10 +644,10 @@ def measure_pilot(usrp, tx_streamer, rx_streamer, quit_event, result_queue, at_t
     amplitudes[LOOPBACK_TX_CH] = 0.8     # Enable TX on the selected loopback channel
 
     # ------------------------------------------------------------
-    # 2. Set the transmission start time
+    # 2. Set the transmission start time (START_Pilot)
     # ------------------------------------------------------------
-    start_time = uhd.types.TimeSpec(at_time)
-    logger.debug(starting_in(usrp, at_time))
+    start_time = uhd.types.TimeSpec(start_pilot)
+    logger.debug(starting_in(usrp, start_pilot))
 
     # ------------------------------------------------------------
     # 3. (Legacy) Access user settings interface for low-level FPGA control
@@ -688,9 +696,11 @@ def measure_pilot(usrp, tx_streamer, rx_streamer, quit_event, result_queue, at_t
     )
 
     # ------------------------------------------------------------
-    # 5. Wait for the capture duration plus some safety margin (delta)
+    # 5. Wait until STOP_Pilot plus some safety margin (delta)
     # ------------------------------------------------------------
-    time.sleep(CAPTURE_TIME + delta(usrp, at_time))
+    wait_time = (stop_pilot - start_pilot) + delta(usrp, start_pilot)
+    if wait_time > 0:
+        time.sleep(wait_time)
 
     # ------------------------------------------------------------
     # 6. Signal all threads to stop and wait for them to finish
@@ -713,7 +723,8 @@ def measure_pilot(usrp, tx_streamer, rx_streamer, quit_event, result_queue, at_t
 
 
 def measure_loopback(
-    usrp, tx_streamer, rx_streamer, quit_event, result_queue, at_time=None
+    usrp, tx_streamer, rx_streamer, quit_event, result_queue,
+    start_lb, stop_lb,
 ):
     # ------------------------------------------------------------
     # Function: measure_loopback
@@ -727,16 +738,22 @@ def measure_loopback(
     logger.debug("########### Measure LOOPBACK ###########")
 
     # ------------------------------------------------------------
+    # 0. Check loopback timing
+    # ------------------------------------------------------------
+    if stop_lb <= start_lb:
+        raise ValueError(f"stop_lb ({stop_lb}) must be > start_lb ({start_lb})")
+
+    # ------------------------------------------------------------
     # 1. Configure transmit signal amplitudes
     # ------------------------------------------------------------
     amplitudes = [0.0, 0.0]              # Initialize amplitude array for both channels
     amplitudes[LOOPBACK_TX_CH] = 0.8     # Enable TX on the selected loopback channel
 
     # ------------------------------------------------------------
-    # 2. Set the transmission start time
+    # 2. Set the transmission start time (START_LB)
     # ------------------------------------------------------------
-    start_time = uhd.types.TimeSpec(at_time)
-    logger.debug(starting_in(usrp, at_time))
+    start_time = uhd.types.TimeSpec(start_lb)
+    logger.debug(starting_in(usrp, start_lb))
 
     # ------------------------------------------------------------
     # 3. (Legacy) Access user settings interface for low-level FPGA control
@@ -784,10 +801,10 @@ def measure_loopback(
         start_time=start_time,
     )
 
-    # ------------------------------------------------------------
-    # 5. Wait for the capture duration plus some safety margin (delta)
-    # ------------------------------------------------------------
-    time.sleep(CAPTURE_TIME + delta(usrp, at_time))
+    # 5. Wait until STOP_LB (from arguments) plus some safety margin (delta)
+    wait_time = (stop_lb - start_lb) + delta(usrp, start_lb)
+    if wait_time > 0:
+        time.sleep(wait_time)
 
     # ------------------------------------------------------------
     # 6. Signal all threads to stop and wait for them to finish
@@ -810,7 +827,7 @@ def measure_loopback(
 
 
 
-def tx_phase_coh(usrp, tx_streamer, quit_event, phase_corr, at_time, long_time=True):
+def tx_phase_coh(usrp, tx_streamer, quit_event, phase_corr, start_bf, long_time=True):
     """
     Transmit a coherent signal with an adjusted phase correction.
 
@@ -845,8 +862,8 @@ def tx_phase_coh(usrp, tx_streamer, quit_event, phase_corr, at_time, long_time=T
     # Set the transmit gain for the active channel
     usrp.set_tx_gain(FREE_TX_GAIN, LOOPBACK_TX_CH)
 
-    # Define the UHD transmission start time
-    start_time = uhd.types.TimeSpec(at_time)
+    # Define the UHD transmission start time (START_BF)
+    start_time = uhd.types.TimeSpec(start_bf)
 
     # Start the transmit thread
     tx_thr = tx_thread(
@@ -866,9 +883,9 @@ def tx_phase_coh(usrp, tx_streamer, quit_event, phase_corr, at_time, long_time=T
 
     # Allow transmission to continue for the configured duration
     if long_time:
-        time.sleep(TX_TIME + delta(usrp, at_time))
+        time.sleep(TX_TIME + delta(usrp, start_bf))
     else:
-        time.sleep(10.0 + delta(usrp, at_time))
+        time.sleep(10.0 + delta(usrp, start_bf))
 
     # Signal all threads to stop
     quit_event.set()
@@ -972,21 +989,23 @@ def main():
         # -------------------------------------------------------------------------
 
         # # --- Perform pilot measurement ---
-        # file_name_state = file_name + "_pilot"
-        # measure_pilot(
-        #     usrp,
-        #     tx_streamer,
-        #     rx_streamer,
-        #     quit_event,
-        #     result_queue,
-        #     at_time=start_next_cmd
-        # )
+        file_name_state = file_name + "_pilot"
+        logger.info("Scheduled pilot measurement start time: %.6f", START_Pilot)
+        measure_pilot(
+            usrp,
+            tx_streamer,
+            rx_streamer,
+            quit_event,
+            result_queue,
+            START_Pilot,
+            STOP_Pilot,
+        )
 
-        # # Retrieve pilot phase result
-        # phi_P = result_queue.get()
+        # Retrieve pilot phase result
+        phi_P = result_queue.get()
 
-        # # Print pilot phase
-        # logger.info("Phase pilot reference signal: %s", phi_P)
+        # Print pilot phase
+        logger.info("Phase pilot reference signal: %s", phi_P)
 
         start_next_cmd += cmd_time + 1.0  # Schedule next command after delay
 
@@ -995,13 +1014,16 @@ def main():
         # -------------------------------------------------------------------------
 
         file_name_state = file_name + "_loopback"
+
+        logger.info("Scheduled LOOPBACK start time: %.6f", START_LB)
         measure_loopback(
             usrp,
             tx_streamer,
             rx_streamer,
             quit_event,
             result_queue,
-            at_time=start_next_cmd,
+            START_LB,
+            STOP_LB,
         )
 
         # Retrieve loopback phase result
@@ -1011,7 +1033,7 @@ def main():
         logger.info("Phase pilot reference signal in rad: %s", phi_LB)
         logger.info("Phase pilot reference signal in degrees: %s", np.rad2deg(phi_LB))
 
-        start_next_cmd += cmd_time + 2.0  # Schedule next command
+        # start_next_cmd += cmd_time + 2.0  # Schedule next command
 
         # -------------------------------------------------------------------------
         # STEP 3: Load cable phase correction from YAML configuration (if available)
@@ -1058,6 +1080,7 @@ def main():
         logger.info("Phase correction in rad: %s", phase_corr)
         logger.info("Phase correction in degrees: %s", np.rad2deg(phase_corr))
 
+        logger.info("Scheduled downlink start time: %.6f", START_BF)
         tx_phase_coh(
             usrp,
             tx_streamer,
@@ -1065,7 +1088,7 @@ def main():
             # phase_corr=phi_LB + phi_P + np.deg2rad(phi_cable),
             # phase_corr=phi_LB - np.deg2rad(phi_cable) + np.deg2rad(phi_offset),
             phase_corr=phi_LB - np.deg2rad(phi_cable),
-            at_time=start_next_cmd,
+            at_time=START_BF, 
             long_time=False, # Set long_time True if you want to transmit longer than 10 seconds
         )
 
