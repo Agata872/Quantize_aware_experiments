@@ -349,7 +349,7 @@ def main():
         tx_meta_thr = tx_meta_thread(tx_streamer, quit_event)
 
         # Stop transmission after a certain duration
-        time.sleep(STOP_Pilot - get_current_time(usrp))
+        time.sleep(STOPT_Pilot_Tx - get_current_time(usrp))
         quit_event.set()
         tx_thr.join()
         tx_meta_thr.join()
