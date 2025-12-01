@@ -343,7 +343,7 @@ def main():
             quit_event,
             phase=[0.0, 0.0],
             amplitude=amplitudes,
-            start_time=START_Pilot,
+            start_time=start_time_spec,
         )
         # Also start TX async metadata monitor thread
         tx_meta_thr = tx_meta_thread(tx_streamer, quit_event)

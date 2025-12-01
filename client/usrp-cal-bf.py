@@ -494,6 +494,9 @@ def tx_ref(usrp, tx_streamer, quit_event, phase, amplitude, start_time=None):
 
     # Schedule the transmission start time
     if start_time is not None:
+        # tx_md.time_spec = start_time
+        if isinstance(start_time, (int, float)):
+            start_time = uhd.types.TimeSpec(float(start_time))
         tx_md.time_spec = start_time
     else:
         tx_md.time_spec = uhd.types.TimeSpec(
