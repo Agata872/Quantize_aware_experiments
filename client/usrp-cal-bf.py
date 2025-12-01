@@ -977,7 +977,7 @@ def main():
         # -------------------------------------------------------------------------
         # STEP 5: Benchmark without phase-aligned beamforming
         # -------------------------------------------------------------------------
-        phase_corr=phi_LB - np.deg2rad(phi_cable) + bf
+        phase_corr=phi_LB - np.deg2rad(phi_cable) + phi_rad
         logger.info("Phase correction in rad: %s", phase_corr)
         logger.info("Phase correction in degrees: %s", np.rad2deg(phase_corr))    
 
