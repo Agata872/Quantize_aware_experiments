@@ -796,6 +796,50 @@ def parse_arguments():
         logger.debug(f"Setting server IP to: {args.ip}")
         server_ip = args.ip
 
+        
+def get_BF(ip, phase):
+    import json
+
+    logger.debug("Connecting to server %s.", ip)
+
+    dealer_socket = context.socket(zmq.DEALER)
+
+    # Give this DEALER a unique identity so the ROUTER can reply properly
+
+    dealer_socket.setsockopt_string(zmq.IDENTITY, HOSTNAME)
+
+    dealer_socket.connect(f"tcp://{SERVER_IP}:5559")
+
+    logger.debug("Sending CSI")
+
+    # Create a message dict with CSI (complex split into real and imag)
+    msg = {"host": HOSTNAME, "csi_phase": phase}
+
+    # Serialize to JSON and send
+    dealer_socket.send(json.dumps(msg).encode())
+    logger.debug("Message sent, waiting for response...")
+
+    # Wait for response
+    poller = zmq.Poller()
+    poller.register(dealer_socket, zmq.POLLIN)
+    socks = dict(poller.poll(30000))
+
+    result = None
+
+    if dealer_socket in socks and socks[dealer_socket] == zmq.POLLIN:
+        reply = dealer_socket.recv()
+        logger.debug(f"Raw reply: {reply!r}")
+        response = json.loads(reply.decode())
+        print(f"[{HOSTNAME}] Received: {response}")
+        # Reconstruct complex number
+        result = complex(response["real"], response["imag"])
+        logger.debug("Received response: %s", result)
+    else:
+        print(f"[{HOSTNAME}] No reply from server, timed out.")
+
+    dealer_socket.close()
+
+    return result
 
 def main():
     global meas_id, file_name_state
@@ -937,8 +981,9 @@ def main():
         alive_socket.close()
 
         PHI_CSI = PHI_PR_1 - np.deg2rad(phi_cable)
+        bf = get_BF(server_ip, PHI_CSI)
         # PHI_CSI = PHI_PR_1 - np.deg2rad(phi_cable) + np.deg2rad(phi_offset)
-        phase_corr=phi_LB - np.deg2rad(phi_cable) + PHI_CSI
+        phase_corr=phi_LB - np.deg2rad(phi_cable) + bf
         logger.info("Phase correction in rad: %s", phase_corr)
         logger.info("Phase correction in degrees: %s", np.rad2deg(phase_corr))
 
