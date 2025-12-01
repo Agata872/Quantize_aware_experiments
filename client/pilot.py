@@ -359,7 +359,7 @@ def main():
         logger.error("Error encountered in TX script: %s", e)
         sys.exit(1)
     finally:
-        time.sleep(1)
+        time.sleep(START_BF + 10 - get_current_time(usrp))
         sys.exit(0)
 
 if __name__ == "__main__":
