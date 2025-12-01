@@ -7,7 +7,7 @@ This project provides tools for managing and performing distributed beamforming 
 ## 🗂️ Directory Structure
 
 ```
-/storage/gilles/DLI_Validation
+/Quantize_aware_experiments
 ├── Ansible
 │   ├── delete_file.yml              # Delete remote files
 │   ├── grant_permissions.yml        # Fix execution permissions
