@@ -955,6 +955,8 @@ def main():
             except yaml.YAMLError as exc:
                 print(exc)
 
+        PHI_CSI = PHI_PR_1 - np.deg2rad(phi_cable)
+        bf = get_BF(server_ip, PHI_CSI)
         # -------------------------------------------------------------------------
         # STEP 4: Add additional phase to ensure right measurement with the scope
         # -------------------------------------------------------------------------
@@ -973,19 +975,16 @@ def main():
         # -------------------------------------------------------------------------
         # STEP 5: Benchmark without phase-aligned beamforming
         # -------------------------------------------------------------------------
-        
+        phase_corr=phi_LB - np.deg2rad(phi_cable) + bf
+        logger.info("Phase correction in rad: %s", phase_corr)
+        logger.info("Phase correction in degrees: %s", np.rad2deg(phase_corr))    
+
         alive_socket = context.socket(zmq.REQ)
         alive_socket.connect(f"tcp://{server_ip}:{5558}")
         logger.debug("Sending TX MODE")
         alive_socket.send_string(f"{HOSTNAME} TX")
         alive_socket.close()
 
-        PHI_CSI = PHI_PR_1 - np.deg2rad(phi_cable)
-        bf = get_BF(server_ip, PHI_CSI)
-        # PHI_CSI = PHI_PR_1 - np.deg2rad(phi_cable) + np.deg2rad(phi_offset)
-        phase_corr=phi_LB - np.deg2rad(phi_cable) + bf
-        logger.info("Phase correction in rad: %s", phase_corr)
-        logger.info("Phase correction in degrees: %s", np.rad2deg(phase_corr))
 
         logger.info("Scheduled downlink start time: %.6f", START_BF)
         tx_phase_coh(

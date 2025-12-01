@@ -147,7 +147,7 @@ with open(output_path, "w") as f:
 
             if bf_socket in socks and socks[bf_socket] == zmq.POLLIN:
                 # ROUTER 收到 multipart: [identity, empty, message]
-                identity, empty, msg = bf_socket.recv_multipart()
+                identity, msg = bf_socket.recv_multipart()
                 data = json.loads(msg.decode())
 
                 host = data["host"]
@@ -165,7 +165,7 @@ with open(output_path, "w") as f:
                 }
 
                 # 返回给对应的 DEALER 客户端
-                bf_socket.send_multipart([identity, b"", json.dumps(response).encode()])
+                bf_socket.send_multipart([identity, json.dumps(response).encode()])
                 bf_messages_received += 1
                 new_msg_received = time.time()
 
