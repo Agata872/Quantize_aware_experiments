@@ -866,10 +866,15 @@ def main():
         )
 
         # Retrieve pilot phase result
-        phi_P = result_queue.get()
+        metrics = result_queue.get()
+        circ_mean = metrics["circ_mean"]
+        avg_ampl = metrics["avg_ampl"]
+        PHI_PR_1 = circ_mean
+        AMP_PR_1 = avg_ampl
 
         # Print pilot phase
-        logger.info("Phase pilot reference signal: %s", phi_P) 
+        logger.info("Phase pilot reference signal: %s", PHI_PR_1) 
+        logger.info("Amplitude of the pilot signal: %s", AMP_PR_1) 
         # -------------------------------------------------------------------------
         # STEP 2: Perform internal loopback measurement with reference signal
         # -------------------------------------------------------------------------
@@ -937,7 +942,7 @@ def main():
         alive_socket.close()
 
         # phase_corr=phi_LB - np.deg2rad(phi_cable) + np.deg2rad(phi_offset)
-        PHI_CSI = phi_P + np.deg2rad(phi_cable)
+        PHI_CSI = PHI_PR_1 + np.deg2rad(phi_cable)
         phase_corr=phi_LB - np.deg2rad(phi_cable) + PHI_CSI
         logger.info("Phase correction in rad: %s", phase_corr)
         logger.info("Phase correction in degrees: %s", np.rad2deg(phase_corr))
