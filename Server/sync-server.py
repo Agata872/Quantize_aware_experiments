@@ -26,6 +26,7 @@ host = "*"               # Host address to bind to. "*" means all available inte
 sync_port = "5557"       # Port used for synchronization messages.
 alive_port = "5558"      # Port used for heartbeat/alive messages.
 data_port = "5559"       # Port used for BF / data transmission.
+bf_port = "5560"        # Port used for BF weight transmission.
 # =============================================================================
 
 # ------------------------ CLI 参数解析 ------------------------
@@ -41,8 +42,8 @@ elif len(sys.argv) == 3:
     num_tx_subscribers = num_ready_subscribers
 else:
     delay = 10
-    num_ready_subscribers = 2
-    num_tx_subscribers = 1
+    num_ready_subscribers = 5
+    num_tx_subscribers = 4
 
 # Creates a socket instance
 context = zmq.Context()
@@ -58,6 +59,10 @@ alive_socket.bind(f"tcp://{host}:{alive_port}")
 # ROUTER: BF 阶段 CSI/权重交互（和客户端的 DEALER 配对）
 bf_socket = context.socket(zmq.ROUTER)
 bf_socket.bind(f"tcp://{host}:{data_port}")
+
+# NEW: BF 端口，专门处理 JSON CSI
+bf_socket = context.socket(zmq.ROUTER)
+bf_socket.bind(f"tcp://{host}:{bf_port}")
 
 # Measurement and experiment identifiers
 meas_id = 0
@@ -127,50 +132,50 @@ with open(output_path, "w") as f:
         print(f"SYNC {meas_id}")
 
         # ======================== 第二阶段：BF 计算 & 权重下发 ========================
-        # 客户端此时调用 get_BF(ip, phase)，用 DEALER 连接 5559
+        # 客户端此时调用 get_BF(ip, phase)，用 DEALER 连接 5560
         print(f"Waiting for CSI from {num_tx_subscribers} subscribers for BF computation...")
 
         bf_messages_received = 0
         bf_poller = zmq.Poller()
         bf_poller.register(bf_socket, zmq.POLLIN)
 
-        # 可选：也把 BF 相关信息写入 yml
         f.write("    bf_tiles:\n")
 
         while bf_messages_received < num_tx_subscribers:
             socks = dict(bf_poller.poll(1000))
 
-            # 类似的超时保护（只在接到部分消息后才开始计时）
             if bf_messages_received > 0 and time.time() - new_msg_received > WAIT_TIMEOUT:
                 print("Timeout while waiting for BF CSI messages, break this measurement.")
                 break
 
             if bf_socket in socks and socks[bf_socket] == zmq.POLLIN:
-                # ROUTER 收到 multipart: [identity, empty, message]
+                # ROUTER <-> DEALER：两帧 [identity, msg]
                 identity, msg = bf_socket.recv_multipart()
-                data = json.loads(msg.decode())
 
+                data = json.loads(msg.decode())
                 host = data["host"]
                 phase = np.array(data["csi_phase"])
 
                 print(f"[BF] Received CSI from {host}: phase shape={phase.shape}")
 
-                # MRT：h = e^{j*phase}，w = conj(h)/||h||
+                # MRT
                 h = np.exp(1j * phase)
                 bf = np.conj(h) / np.linalg.norm(h)
 
+                # 兼容标量/向量，统一取第一个元素
                 if np.isscalar(bf) or getattr(bf, "ndim", 0) == 0:
                     bf0 = bf
                 else:
                     bf0 = np.ravel(bf)[0]
 
-                response = {
+                response_bytes = json.dumps({
                     "real": float(np.real(bf0)),
-                    "imag": float(np.imag(bf0))
-                }
+                    "imag": float(np.imag(bf0)),
+                }).encode()
 
-                # 返回给对应的 DEALER 客户端
-                bf_socket.send_multipart([identity, json.dumps(response).encode()])
+                # DEALER 对应两帧即可
+                bf_socket.send_multipart([identity, response_bytes])
+
                 bf_messages_received += 1
                 new_msg_received = time.time()
 

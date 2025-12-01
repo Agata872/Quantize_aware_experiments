@@ -808,7 +808,7 @@ def get_BF(ip, phase):
 
     dealer_socket.setsockopt_string(zmq.IDENTITY, HOSTNAME)
 
-    dealer_socket.connect(f"tcp://{server_ip}:5559")
+    dealer_socket.connect(f"tcp://{server_ip}:5560")
 
     logger.debug("Sending CSI")
 
