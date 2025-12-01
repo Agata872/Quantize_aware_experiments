@@ -12,10 +12,10 @@
         path: ~/Quantize_aware_experiments/client/run_experiment.sh
         mode: '0755'
 
-    - name: Run run_experiment.sh with custom PYTHONPATH
+    - name: Run run_experiment.sh with custom PYTHONPATH and role
       ansible.builtin.shell: |
         export PYTHONPATH="{{ python_path }}:$PYTHONPATH"
         cd ~/Quantize_aware_experiments/client
-        ./run_experiment.sh
+        ./run_experiment.sh "{{ experiment_role }}"
       args:
         executable: /bin/bash

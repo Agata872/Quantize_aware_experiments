@@ -1,22 +1,24 @@
 #!/bin/bash
 
-# Define the parameters
-ITERATIONS=20       # Number of iterations per gain value
+ROLE="$1"            # pilot 或 usrp
+ITERATIONS=20
 
-for ((i=1; i<=ITERATIONS; i++))
-do
-    echo "Running iteration $i"
+if [[ -z "$ROLE" ]]; then
+    echo "Usage: $0 {pilot|usrp}"
+    exit 1
+fi
 
-    # Run both scripts in parallel
-    python3 usrp-cal-bf.py &
-    pid1=$!
+for ((i=1; i<=ITERATIONS; i++)); do
+    echo "Running iteration $i as role: $ROLE"
 
-    python3 pilot.py &
-    pid2=$!
-
-    # Wait for both to finish
-    wait $pid1
-    wait $pid2
+    if [[ "$ROLE" == "pilot" ]]; then
+        python3 pilot.py
+    elif [[ "$ROLE" == "usrp" ]]; then
+        python3 usrp-cal-bf.py
+    else
+        echo "Unknown ROLE '$ROLE'. Expected: pilot or usrp"
+        exit 1
+    fi
 
     echo "Sleeping 5 seconds before next iteration..."
     sleep 5
