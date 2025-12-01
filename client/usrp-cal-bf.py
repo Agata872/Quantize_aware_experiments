@@ -869,8 +869,7 @@ def main():
         phi_P = result_queue.get()
 
         # Print pilot phase
-        logger.info("Phase pilot reference signal: %s", phi_P)
-
+        logger.info("Phase pilot reference signal: %s", phi_P) 
         # -------------------------------------------------------------------------
         # STEP 2: Perform internal loopback measurement with reference signal
         # -------------------------------------------------------------------------
@@ -938,7 +937,8 @@ def main():
         alive_socket.close()
 
         # phase_corr=phi_LB - np.deg2rad(phi_cable) + np.deg2rad(phi_offset)
-        phase_corr=phi_LB - np.deg2rad(phi_cable)
+        PHI_CSI = phi_P + np.deg2rad(phi_cable)
+        phase_corr=phi_LB - np.deg2rad(phi_cable) + PHI_CSI
         logger.info("Phase correction in rad: %s", phase_corr)
         logger.info("Phase correction in degrees: %s", np.rad2deg(phase_corr))
 
@@ -949,7 +949,7 @@ def main():
             quit_event,
             # phase_corr=phi_LB + phi_P + np.deg2rad(phi_cable),
             # phase_corr=phi_LB - np.deg2rad(phi_cable) + np.deg2rad(phi_offset),
-            phase_corr=phi_LB - np.deg2rad(phi_cable),
+            phase_corr=phi_LB - np.deg2rad(phi_cable) + PHI_CSI,
             start_bf=START_BF, 
             long_time=False, # Set long_time True if you want to transmit longer than 10 seconds
         )
