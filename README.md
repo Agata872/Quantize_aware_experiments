@@ -35,7 +35,22 @@ This project provides tools for managing and performing distributed beamforming 
 ---
 
 ## 🚀 Measurement Workflow
+---
 
+### On the server:
+
+1. **If do it on the Test Tiles:*
+   
+```bash
+export PYTHONPATH="/usr/local/lib/python3.11/site-packages:$PYTHONPATH"
+```
+
+2. **If do it on the ceiling Tiles:*
+
+```bash
+export PYTHONPATH="/usr/local/lib/python3/dist-packages:$PYTHONPATH""
+```
+---
 
 ### Reference Signal generator:
 
@@ -62,24 +77,6 @@ python3 examples/tx_waveforms.py  --args "type=b200" --freq 920e6 --rate 1e6 --d
    ```ansible
    ansible-playbook -i inventory.yaml comp.yml -f40
    ```
-
-
----
-
-### On the server:
-
-1. **If do it on the Test Tiles:*
-   
-```bash
-export PYTHONPATH="/usr/local/lib/python3.11/site-packages:$PYTHONPATH"
-```
-
-2. **If do it on the ceiling Tiles:*
-
-```bash
-export PYTHONPATH="/usr/local/lib/python3/dist-packages:$PYTHONPATH""
-```
----
 
 ## 🧪 TODO
 
