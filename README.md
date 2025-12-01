@@ -27,8 +27,11 @@ This project provides tools for managing and performing distributed beamforming 
 │   ├── single-pilot/                # Single pilot BF variant
 │   │   └── (same structure as double-pilot)
 │   └── usrp_b210_fpga_loopback_ctrl.bin     # Shared binary
-└── Process
-    └── process.ipynb                # Jupyter notebook for post-processing measurements
+└── Server
+│   └── helper.py
+│   ├── meas-phaes.py
+│   ├── scope.py
+│   ├── sync-server.py               # Sychronization from server  
 ```
 
 ---
