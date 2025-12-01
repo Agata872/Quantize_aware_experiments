@@ -25,7 +25,7 @@ if len(sys.argv) > 1:
     num_subscribers = int(sys.argv[2])
 else:
     delay = 10
-    num_subscribers = 5
+    num_subscribers = 2
 
 # Creates a socket instance
 context = zmq.Context()

@@ -385,8 +385,6 @@ def setup(usrp, server_ip, connect=True):
     wait_till_go_from_server(server_ip, connect)
     logger.info("Setting device timestamp to 0...")
     usrp.set_time_unknown_pps(uhd.types.TimeSpec(0.0))
-
-    usrp.set_time_unknown_pps(uhd.types.TimeSpec(0.0))
     logger.debug("[SYNC] Resetting time.")
     logger.info(f"RX GAIN PROFILE CH0: {usrp.get_rx_gain_names(0)}")
     logger.info(f"RX GAIN PROFILE CH1: {usrp.get_rx_gain_names(1)}")
