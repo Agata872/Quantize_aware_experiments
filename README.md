@@ -13,7 +13,7 @@ This project provides tools for managing and performing distributed beamforming 
 │   ├── inventory.yaml               # List of target hosts
 │   ├── kill.yml                     # Kill running measurement scripts
 │   └── pull_code.yml                # Pull the latest code from Git
-│── client/                       # Double pilot BF implementation
+│── client/                          
 │   │   ├── pilot.py                 # Generate pilot signal at UE client
 │   │   ├── usrp-cal-bf.py           # Full uplink and downlink process at APs' client
 │   │   ├── cal-settings.yml         # USRPs configuration
@@ -24,7 +24,7 @@ This project provides tools for managing and performing distributed beamforming 
 │   ├── meas-phaes.py
 │   ├── scope.py
 │   ├── sync-server.py               # Synchronization from server
-│── data/                        # Auto-generated measurement result files (YAML)
+│── data/                            # Auto-generated measurement result files (YAML)
 ```
 
 ---
