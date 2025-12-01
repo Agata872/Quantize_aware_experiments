@@ -914,17 +914,17 @@ def main():
         # -------------------------------------------------------------------------
         # STEP 4: Add additional phase to ensure right measurement with the scope
         # -------------------------------------------------------------------------
-        # phi_offset = 0
-        # with open(os.path.join(os.path.dirname(__file__), "config-phase-offsets.yml"), "r") as phases_yaml:
-        #     try:
-        #         phases_dict = yaml.safe_load(phases_yaml)
-        #         if HOSTNAME in phases_dict.keys():
-        #             phi_cable = phases_dict[HOSTNAME]
-        #             logger.debug(f"Applying phase correction: {phi_offset}")
-        #         else:
-        #             logger.error("Phase offset not found in config-phase-offsets.yml")
-        #     except yaml.YAMLError as exc:
-        #         print(exc)
+        phi_offset = 0
+        with open(os.path.join(os.path.dirname(__file__), "config-phase-offsets.yml"), "r") as phases_yaml:
+            try:
+                phases_dict = yaml.safe_load(phases_yaml)
+                if HOSTNAME in phases_dict.keys():
+                    phi_offset = phases_dict[HOSTNAME]
+                    logger.debug(f"Applying phase correction: {phi_offset}")
+                else:
+                    logger.error("Phase offset not found in config-phase-offsets.yml")
+            except yaml.YAMLError as exc:
+                print(exc)
 
         # -------------------------------------------------------------------------
         # STEP 5: Benchmark without phase-aligned beamforming
@@ -936,8 +936,8 @@ def main():
         alive_socket.send_string(f"{HOSTNAME} TX")
         alive_socket.close()
 
-        # phase_corr=phi_LB - np.deg2rad(phi_cable) + np.deg2rad(phi_offset)
-        PHI_CSI = PHI_PR_1 - np.deg2rad(phi_cable)
+        # PHI_CSI = PHI_PR_1 - np.deg2rad(phi_cable)
+        PHI_CSI = PHI_PR_1 - np.deg2rad(phi_cable) + np.deg2rad(phi_offset)
         phase_corr=phi_LB - np.deg2rad(phi_cable) + PHI_CSI
         logger.info("Phase correction in rad: %s", phase_corr)
         logger.info("Phase correction in degrees: %s", np.rad2deg(phase_corr))
