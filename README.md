@@ -8,30 +8,23 @@ This project provides tools for managing and performing distributed beamforming 
 
 ```
 /Quantize_aware_experiments
-├── Ansible
+├── Ansible/
 │   ├── delete_file.yml              # Delete remote files
 │   ├── inventory.yaml               # List of target hosts
 │   ├── kill.yml                     # Kill running measurement scripts
 │   └── pull_code.yml                # Pull the latest code from Git
-├── Measure
-│   ├── data/                        # Auto-generated measurement result files (YAML)
-│   ├── double-pilot/                # Double pilot BF implementation
-│   │   ├── BF-server.py             # Receives CSI, computes BF weights
-│   │   ├── beamform.py              # Applies beamforming weights
-│   │   ├── combingTxRx.py           # Transmits and receives signal for measurement
-│   │   ├── generateBFcoeff.py       # Computes BF coefficients
-│   │   ├── sync-server.py           # Synchronization message server
-│   │   ├── config*.yml              # Configuration files
+│── client                       # Double pilot BF implementation
+│   │   ├── pilot.py                 # Generate pilot signal at UE client
+│   │   ├── usrp-cal-bf.py           # Full uplink and downlink process at APs' client
+│   │   ├── cal-settings.yml         # USRPs configuration
 │   │   ├── usrp_b210_fpga_loopback_ctrl.bin # Custom FPGA image
-│   │   └── *.py, *.yml              # Supporting utilities and configs
-│   ├── single-pilot/                # Single pilot BF variant
-│   │   └── (same structure as double-pilot)
-│   └── usrp_b210_fpga_loopback_ctrl.bin     # Shared binary
+│   │   └── tools.py                 # Support tool functions
 └── Server
 │   └── helper.py
 │   ├── meas-phaes.py
 │   ├── scope.py
-│   ├── sync-server.py               # Sychronization from server  
+│   ├── sync-server.py               # Synchronization from server
+│── data/                        # Auto-generated measurement result files (YAML)
 ```
 
 ---
