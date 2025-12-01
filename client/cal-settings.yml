@@ -40,15 +40,15 @@ server_ip: "192.108.2.61"
 # Calibration timing settings
 # PILOT
 START_Pilot: 5
-STOPT_Pilot_Tx: 13
-STOP_Pilot: 15
+STOPT_Pilot_Tx: 15
+STOP_Pilot: 20
 
 # Loopback
-START_LB: 22
-STOP_LB: 30
+START_LB: 25
+STOP_LB: 35
 
 # BF
-START_BF: 40
+START_BF: 45
 
 # Gain setups
 PILOT_TX_GAIN: 88
