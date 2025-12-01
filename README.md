@@ -13,13 +13,13 @@ This project provides tools for managing and performing distributed beamforming 
 │   ├── inventory.yaml               # List of target hosts
 │   ├── kill.yml                     # Kill running measurement scripts
 │   └── pull_code.yml                # Pull the latest code from Git
-│── client                       # Double pilot BF implementation
+│── client/                       # Double pilot BF implementation
 │   │   ├── pilot.py                 # Generate pilot signal at UE client
 │   │   ├── usrp-cal-bf.py           # Full uplink and downlink process at APs' client
 │   │   ├── cal-settings.yml         # USRPs configuration
 │   │   ├── usrp_b210_fpga_loopback_ctrl.bin # Custom FPGA image
 │   │   └── tools.py                 # Support tool functions
-└── Server
+└── Server/
 │   └── helper.py
 │   ├── meas-phaes.py
 │   ├── scope.py
