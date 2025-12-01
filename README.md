@@ -1,4 +1,4 @@
-# 📡 DLI\_Validation Beamforming System
+# 📡 Quantize-and-Interferece-aware-experiments
 
 This project provides tools for managing and performing distributed beamforming measurements using USRP B210 devices. It includes tools for synchronization, configuration, and measurement orchestration, using `zmq`, `ansible`, and custom Python scripts.
 
