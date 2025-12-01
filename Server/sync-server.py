@@ -41,8 +41,8 @@ elif len(sys.argv) == 3:
     num_tx_subscribers = num_ready_subscribers
 else:
     delay = 10
-    num_ready_subscribers = 5
-    num_tx_subscribers = 4
+    num_ready_subscribers = 2
+    num_tx_subscribers = 1
 
 # Creates a socket instance
 context = zmq.Context()
