@@ -5,6 +5,7 @@
 
   vars:
     python_path: "/usr/local/lib/python3.11/site-packages"
+    iterations: 20
 
   tasks:
     - name: Ensure run_experiment.sh is executable
@@ -12,10 +13,14 @@
         path: ~/Quantize_aware_experiments/client/run_experiment.sh
         mode: '0755'
 
-    - name: Run run_experiment.sh with custom PYTHONPATH and role
+    - name: Run iteration {{ item }} on all nodes (synchronized)
       ansible.builtin.shell: |
+        echo "=== Iteration {{ item }} on {{ inventory_hostname }} (role={{ experiment_role }}) ==="
         export PYTHONPATH="{{ python_path }}:$PYTHONPATH"
         cd ~/Quantize_aware_experiments/client
         ./run_experiment.sh "{{ experiment_role }}"
       args:
         executable: /bin/bash
+      loop: "{{ range(1, iterations + 1) | list }}"
+      loop_control:
+        label: "iteration {{ item }}"
