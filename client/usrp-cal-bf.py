@@ -956,7 +956,9 @@ def main():
                 print(exc)
 
         PHI_CSI = PHI_PR_1 - np.deg2rad(phi_cable)
-        bf = get_BF(server_ip, PHI_CSI)
+        bf_weight = get_BF(server_ip, PHI_CSI)
+        phi_rad = np.angle(bf_weight)
+        logger.info("Phase correction in rad: %f", phi_rad)
         # -------------------------------------------------------------------------
         # STEP 4: Add additional phase to ensure right measurement with the scope
         # -------------------------------------------------------------------------

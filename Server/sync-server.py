@@ -159,9 +159,14 @@ with open(output_path, "w") as f:
                 h = np.exp(1j * phase)
                 bf = np.conj(h) / np.linalg.norm(h)
 
+                if np.isscalar(bf) or getattr(bf, "ndim", 0) == 0:
+                    bf0 = bf
+                else:
+                    bf0 = np.ravel(bf)[0]
+
                 response = {
-                    "real": float(np.real(bf[0])),
-                    "imag": float(np.imag(bf[0]))
+                    "real": float(np.real(bf0)),
+                    "imag": float(np.imag(bf0))
                 }
 
                 # 返回给对应的 DEALER 客户端
