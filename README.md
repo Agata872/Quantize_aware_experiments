@@ -10,7 +10,6 @@ This project provides tools for managing and performing distributed beamforming 
 /Quantize_aware_experiments
 ├── Ansible
 │   ├── delete_file.yml              # Delete remote files
-│   ├── grant_permissions.yml        # Fix execution permissions
 │   ├── inventory.yaml               # List of target hosts
 │   ├── kill.yml                     # Kill running measurement scripts
 │   └── pull_code.yml                # Pull the latest code from Git
