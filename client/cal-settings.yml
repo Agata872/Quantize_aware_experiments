@@ -49,7 +49,7 @@ STOPT_Pilot_Tx: 25
 STOP_Pilot: 28
 
 # BF
-START_BF: 32
+START_BF: 35
 
 # Gain setups
 PILOT_TX_GAIN: 88
