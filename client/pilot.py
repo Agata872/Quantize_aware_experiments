@@ -843,7 +843,9 @@ def main():
 
         # Event used to control thread termination
         quit_event = threading.Event()
-
+        
+        # Queue to collect measurement results and communicate between threads
+        result_queue = queue.Queue()
         # -------------------------------------------------------------------------
         # STEP 1: Perform internal loopback measurement with reference signal
         # -------------------------------------------------------------------------
