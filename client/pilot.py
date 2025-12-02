@@ -805,6 +805,21 @@ def main():
     parse_arguments()
 
     try:
+        # Attempt to open and load calibration settings from the YAML file
+        with open(os.path.join(os.path.dirname(__file__), "cal-settings.yml"), "r") as file:
+            vars = yaml.safe_load(file)
+            globals().update(vars)  # update the global variables with the vars in yaml
+    except FileNotFoundError:
+        logger.error("Calibration file 'cal-settings.yml' not found in the current directory.")
+        exit()
+    except yaml.YAMLError as e:
+        logger.error(f"Error parsing 'cal-settings.yml': {e}")
+        exit()
+    except Exception as e:
+        logger.error(f"Unexpected error while loading calibration settings: {e}")
+        exit()
+
+    try:
         # Get current path
         script_dir = os.path.dirname(os.path.realpath(__file__))
 
