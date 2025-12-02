@@ -843,12 +843,14 @@ def main():
 
         # Event used to control thread termination
         quit_event = threading.Event()
-        
+
         # Queue to collect measurement results and communicate between threads
         result_queue = queue.Queue()
         # -------------------------------------------------------------------------
         # STEP 1: Perform internal loopback measurement with reference signal
         # -------------------------------------------------------------------------
+        file_name_state = file_name + "_loopback"
+        
         logger.info("Scheduled LOOPBACK start time: %.6f", START_LB)
         measure_loopback(
             usrp,
