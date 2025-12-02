@@ -1,3 +1,5 @@
 processing/
 .idea/
 data/
+__pycache__/
+*.pyc
