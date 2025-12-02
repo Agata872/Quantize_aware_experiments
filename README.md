@@ -9,10 +9,10 @@ This project provides tools for managing and performing distributed beamforming 
 ```
 /Quantize_aware_experiments
 ├── Ansible/
-│   ├── delete_file.yml              # Delete remote files
 │   ├── inventory.yaml               # List of target hosts
 │   ├── kill.yml                     # Kill running measurement scripts
 │   └── pull_code.yml                # Pull the latest code from Git
+│   └── comp.yml                     # Start the experiments
 │── client/                          
 │   │   ├── pilot.py                 # Generate pilot signal at UE client
 │   │   ├── usrp-cal-bf.py           # Full uplink and downlink process at APs' client
