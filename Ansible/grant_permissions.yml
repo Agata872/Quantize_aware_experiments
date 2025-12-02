@@ -1,7 +1,0 @@
----
-- name: Change ownership of /home/pi/Gnn_based_downlink on ceiling nodes
-  hosts: ceiling
-  become: yes
-  tasks:
-    - name: Set ownership recursively for Gnn_based_downlink
-      ansible.builtin.command: chown -R pi:pi /home/pi/Gnn_based_downlink_precoder_Deployment

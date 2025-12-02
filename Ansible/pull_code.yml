@@ -8,6 +8,6 @@
       ansible.builtin.git:
         repo: "https://github.com/Agata872/Quantize_aware_experiments.git"
         dest: "/home/pi/Quantize_aware_experiments"
-        version: "centralized-processing"
+        version: "master"
         update: true
         force: true
