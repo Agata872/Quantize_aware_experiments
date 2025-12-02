@@ -38,14 +38,15 @@ server_ip: "192.108.2.61"
 # IP address of the server to connect to.
 
 # Calibration timing settings
-# PILOT
-START_Pilot: 5
-STOPT_Pilot_Tx: 15
-STOP_Pilot: 18
 
 # Loopback
-START_LB: 25
-STOP_LB: 35
+START_LB: 5
+STOP_LB: 18
+
+# PILOT
+START_Pilot: 25
+STOPT_Pilot_Tx: 20
+STOP_Pilot: 35
 
 # BF
 START_BF: 45

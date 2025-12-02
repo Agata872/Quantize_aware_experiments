@@ -165,7 +165,7 @@ with open(output_path, "w") as f:
                     "real": float(np.real(bf0)),
                     "imag": float(np.imag(bf0)),
                 }).encode()
-
+                print("bf0 (rad) =", np.angle(bf0))
                 # DEALER 对应两帧即可
                 bf_socket.send_multipart([identity, response_bytes])
 

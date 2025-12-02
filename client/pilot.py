@@ -282,6 +282,126 @@ def delta(usrp, at_time):
 
 def get_current_time(usrp):
     return usrp.get_time_now().get_real_secs()
+
+def rx_thread(usrp, rx_streamer, quit_event, duration, res, start_time=None):
+    _rx_thread = threading.Thread(
+        target=rx_ref,
+        args=(
+            usrp,
+            rx_streamer,
+            quit_event,
+            duration,
+            res,
+            start_time,
+        ),
+    )
+    _rx_thread.name = "RX_thread"
+    _rx_thread.start()
+    return _rx_thread
+
+def measure_loopback(
+    usrp, tx_streamer, rx_streamer, quit_event, result_queue,
+    start_lb, stop_lb,
+):
+    # ------------------------------------------------------------
+    # Function: measure_loopback
+    # Purpose:
+    #   This function performs a loopback measurement using a USRP device.
+    #   It transmits a known signal on one channel and simultaneously
+    #   receives it on another channel (loopback). The result is captured,
+    #   stored, and processed later.
+    # ------------------------------------------------------------
+
+    logger.debug("########### Measure LOOPBACK ###########")
+
+    # ------------------------------------------------------------
+    # 0. Check loopback timing
+    # ------------------------------------------------------------
+    if stop_lb <= start_lb:
+        raise ValueError(f"stop_lb ({stop_lb}) must be > start_lb ({start_lb})")
+
+    # ------------------------------------------------------------
+    # 1. Configure transmit signal amplitudes
+    # ------------------------------------------------------------
+    amplitudes = [0.0, 0.0]              # Initialize amplitude array for both channels
+    amplitudes[LOOPBACK_TX_CH] = 0.8     # Enable TX on the selected loopback channel
+
+    # ------------------------------------------------------------
+    # 2. Set the transmission start time (START_LB)
+    # ------------------------------------------------------------
+    start_time = uhd.types.TimeSpec(start_lb)
+    logger.debug(starting_in(usrp, start_lb))
+
+    # ------------------------------------------------------------
+    # 3. (Legacy) Access user settings interface for low-level FPGA control
+    #    Used to switch the USRP into "loopback mode" by writing to
+    #    a register in the user settings interface.
+    #    NOTE: This interface is no longer available in UHD 4.x.
+    # ------------------------------------------------------------
+    user_settings = None
+    try:
+        user_settings = usrp.get_user_settings_iface(1)
+        if user_settings:
+            # Read current register value (for debug)
+            logger.debug(user_settings.peek32(0))
+            # Write a value to activate loopback mode
+            user_settings.poke32(0, SWITCH_LOOPBACK_MODE)
+            # Read again to verify the register value was updated
+            logger.debug(user_settings.peek32(0))
+        else:
+            logger.error("Cannot write to user settings.")
+    except Exception as e:
+        logger.error(e)
+
+    # ------------------------------------------------------------
+    # 4. Start transmit (TX), metadata, and receive (RX) threads
+    # ------------------------------------------------------------
+    tx_thr = tx_thread(
+        usrp,
+        tx_streamer,
+        quit_event,
+        amplitude=amplitudes,
+        phase=[0.0, 0.0],
+        start_time=start_time,
+    )
+
+    # Thread responsible for handling TX metadata (timestamps, etc.)
+    tx_meta_thr = tx_meta_thread(tx_streamer, quit_event)
+
+    # Thread that captures received samples during loopback
+    rx_thr = rx_thread(
+        usrp,
+        rx_streamer,
+        quit_event,
+        duration=stop_lb - start_lb,
+        res=result_queue,
+        start_time=start_time,
+    )
+
+    # 5. Wait until STOP_LB (from arguments) plus some safety margin (delta)
+    wait_time = (stop_lb - start_lb) + delta(usrp, start_lb)
+    if wait_time > 0:
+        time.sleep(wait_time)
+
+    # ------------------------------------------------------------
+    # 6. Signal all threads to stop and wait for them to finish
+    # ------------------------------------------------------------
+    quit_event.set()   # Triggers thread termination
+    tx_thr.join()
+    rx_thr.join()
+    tx_meta_thr.join()
+
+    # ------------------------------------------------------------
+    # 7. Reset the RF switch control (disable loopback mode)
+    # ------------------------------------------------------------
+    if user_settings:
+        user_settings.poke32(0, SWITCH_RESET_MODE)
+
+    # ------------------------------------------------------------
+    # 8. Clear the quit event flag to prepare for the next measurement
+    # ------------------------------------------------------------
+    quit_event.clear()
+
 # -------------------------------
 # Main function: run transmission task (after synchronization control)
 # -------------------------------
@@ -323,6 +443,28 @@ def main():
         # Complete hardware setup, synchronization, tuning, and get TX and RX streamers
         tx_streamer, _ = setup(usrp)
         quit_event = threading.Event()
+
+        # -------------------------------------------------------------------------
+        # STEP 1: Perform internal loopback measurement with reference signal
+        # -------------------------------------------------------------------------
+        logger.info("Scheduled LOOPBACK start time: %.6f", START_LB)
+        measure_loopback(
+            usrp,
+            tx_streamer,
+            rx_streamer,
+            quit_event,
+            result_queue,
+            START_LB,
+            STOP_LB,
+        )
+
+        # Retrieve loopback phase result
+        phi_LB = result_queue.get()
+
+        # Print loopback phase
+        logger.info("Phase pilot reference signal in rad: %s", phi_LB)
+        logger.info("Phase pilot reference signal in degrees: %s", np.rad2deg(phi_LB))
+
         # =========================
 
         # After synchronization, schedule TX based on current time
@@ -341,6 +483,7 @@ def main():
             usrp,
             tx_streamer,
             quit_event,
+            phase_corr=phi_LB,
             phase=[0.0, 0.0],
             amplitude=amplitudes,
             start_time=start_time_spec,

@@ -893,29 +893,9 @@ def main():
         # Queue to collect measurement results and communicate between threads
         result_queue = queue.Queue()
 
-        # -------------------------------------------------------------------------
-        # STEP 1: Perform loopback measurement with reference signal
-        # -------------------------------------------------------------------------
 
-        # # --- Perform pilot measurement ---
-        file_name_state = file_name + "_pilot"
-        logger.info("Scheduled pilot measurement start time: %.6f", START_Pilot)
-        measure_pilot(
-            usrp,
-            rx_streamer,
-            quit_event,
-            result_queue,
-            START_Pilot,
-            STOP_Pilot,
-        )
-
-        # Retrieve pilot phase result
-        PHI_PR_1 = result_queue.get()
-
-        # Print pilot phase
-        logger.info("Phase pilot reference signal: %s", PHI_PR_1)
         # -------------------------------------------------------------------------
-        # STEP 2: Perform internal loopback measurement with reference signal
+        # STEP 1: Perform internal loopback measurement with reference signal
         # -------------------------------------------------------------------------
 
         file_name_state = file_name + "_loopback"
@@ -938,7 +918,27 @@ def main():
         logger.info("Phase pilot reference signal in rad: %s", phi_LB)
         logger.info("Phase pilot reference signal in degrees: %s", np.rad2deg(phi_LB))
 
-        # start_next_cmd += cmd_time + 2.0  # Schedule next command
+        # -------------------------------------------------------------------------
+        # STEP 2: Perform pilot measurement with reference signal
+        # -------------------------------------------------------------------------
+
+        # # --- Perform pilot measurement ---
+        file_name_state = file_name + "_pilot"
+        logger.info("Scheduled pilot measurement start time: %.6f", START_Pilot)
+        measure_pilot(
+            usrp,
+            rx_streamer,
+            quit_event,
+            result_queue,
+            START_Pilot,
+            STOP_Pilot,
+        )
+
+        # Retrieve pilot phase result
+        PHI_PR_1 = result_queue.get()
+
+        # Print pilot phase
+        logger.info("Phase pilot reference signal: %s", PHI_PR_1)
 
         # -------------------------------------------------------------------------
         # STEP 3: Load cable phase correction from YAML configuration (if available)
