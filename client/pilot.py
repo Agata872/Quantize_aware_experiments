@@ -892,7 +892,6 @@ def main():
             tx_streamer,
             quit_event,
             phase_corr=phase_corr,
-            phase=[0.0, 0.0],
             amplitude=amplitudes,
             start_time=start_time_spec,
         )
