@@ -157,7 +157,7 @@ with open(output_path, "w") as f:
                 host = data["host"]
                 phase = np.array(data["csi_phase"])
 
-                print(f"[BF] Received CSI from {host}: phase shape={phase.shape}")
+                print(f"[BF] Received CSI from {host}: phase={phase}")
 
                 bf0 = compute_bf(phase, method="mrt")
 
