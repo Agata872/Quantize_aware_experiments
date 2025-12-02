@@ -543,7 +543,7 @@ def main():
         time.sleep(2)  # Wait for PPS rising edge
 
         # Complete hardware setup, synchronization, tuning, and get TX and RX streamers
-        tx_streamer, _ = setup(usrp)
+        tx_streamer, rx_streamer = setup(usrp, server_ip, connect=True)
         quit_event = threading.Event()
 
         # -------------------------------------------------------------------------
