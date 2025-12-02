@@ -14,8 +14,11 @@ import zmq
 import time
 import sys
 import os
+import json              # NEW: for BF message
+import numpy as np       # NEW: for BF computation
 from datetime import datetime
 from helper import *
+from beamforming import compute_bf
 
 # =============================================================================
 #                           Experiment Configuration
@@ -23,7 +26,8 @@ from helper import *
 host = "*"               # Host address to bind to. "*" means all available interfaces.
 sync_port = "5557"       # Port used for synchronization messages.
 alive_port = "5558"      # Port used for heartbeat/alive messages.
-data_port = "5559"       # Port used for data transmission.
+data_port = "5559"       # Port used for BF / data transmission.
+bf_port = "5560"        # Port used for BF weight transmission.
 # =============================================================================
 
 # ------------------------ CLI 参数解析 ------------------------
@@ -31,7 +35,7 @@ data_port = "5559"       # Port used for data transmission.
 if len(sys.argv) >= 4:
     delay = int(sys.argv[1])
     num_ready_subscribers = int(sys.argv[2])   # 第一阶段 alive 数量
-    num_tx_subscribers = int(sys.argv[3])      # 第二阶段 TX MODE 数量
+    num_tx_subscribers = int(sys.argv[3])      # 第二/三阶段 TX 相关的数量
 elif len(sys.argv) == 3:
     delay = int(sys.argv[1])
     num_ready_subscribers = int(sys.argv[2])
@@ -45,14 +49,21 @@ else:
 # Creates a socket instance
 context = zmq.Context()
 
+# PUB: 同步 SYNC 广播
 sync_socket = context.socket(zmq.PUB)
-sync_socket.bind("tcp://{}:{}".format(host, sync_port))
+sync_socket.bind(f"tcp://{host}:{sync_port}")
 
+# REP: READY / TXMODE 控制信息
 alive_socket = context.socket(zmq.REP)
-alive_socket.bind("tcp://{}:{}".format(host, alive_port))
+alive_socket.bind(f"tcp://{host}:{alive_port}")
 
-data_socket = context.socket(zmq.REP)
-data_socket.bind("tcp://{}:{}".format(host, data_port))
+# ROUTER: BF 阶段 CSI/权重交互（和客户端的 DEALER 配对）
+bf_socket = context.socket(zmq.ROUTER)
+bf_socket.bind(f"tcp://{host}:{data_port}")
+
+# NEW: BF 端口，专门处理 JSON CSI
+bf_socket = context.socket(zmq.ROUTER)
+bf_socket.bind(f"tcp://{host}:{bf_port}")
 
 # Measurement and experiment identifiers
 meas_id = 0
@@ -60,7 +71,7 @@ meas_id = 0
 # Unique ID for the experiment based on current UTC timestamp
 unique_id = str(datetime.utcnow().strftime("%Y%m%d%H%M%S"))
 
-# ZeroMQ poller setup
+# ZeroMQ poller setup for READY / TXMODE
 poller = zmq.Poller()
 poller.register(alive_socket, zmq.POLLIN)
 
@@ -111,6 +122,7 @@ with open(output_path, "w") as f:
                 response = "READY_ACK"
                 alive_socket.send_string(response)
 
+        # 这里 READY 阶段结束，准备发 SYNC
         print(f"sending 'SYNC' message in {delay}s...")
         f.flush()
         time.sleep(delay)
@@ -120,7 +132,52 @@ with open(output_path, "w") as f:
         sync_socket.send_string(f"{meas_id} {unique_id}")
         print(f"SYNC {meas_id}")
 
-        # ======================== 第二阶段：TX MODE ========================
+        # ======================== 第二阶段：BF 计算 & 权重下发 ========================
+        # 客户端此时调用 get_BF(ip, phase)，用 DEALER 连接 5560
+        print(f"Waiting for CSI from {num_tx_subscribers} subscribers for BF computation...")
+
+        bf_messages_received = 0
+        bf_poller = zmq.Poller()
+        bf_poller.register(bf_socket, zmq.POLLIN)
+
+        f.write("    bf_tiles:\n")
+
+        while bf_messages_received < num_tx_subscribers:
+            socks = dict(bf_poller.poll(1000))
+
+            if bf_messages_received > 0 and time.time() - new_msg_received > WAIT_TIMEOUT:
+                print("Timeout while waiting for BF CSI messages, break this measurement.")
+                break
+
+            if bf_socket in socks and socks[bf_socket] == zmq.POLLIN:
+                # ROUTER <-> DEALER：两帧 [identity, msg]
+                identity, msg = bf_socket.recv_multipart()
+
+                data = json.loads(msg.decode())
+                host = data["host"]
+                phase = np.array(data["csi_phase"])
+
+                print(f"[BF] Received CSI from {host}: phase={phase}")
+
+                bf0 = compute_bf(phase, method="mrt")
+
+                response_bytes = json.dumps({
+                    "real": float(np.real(bf0)),
+                    "imag": float(np.imag(bf0)),
+                }).encode()
+                print("bf0 (rad) =", np.angle(bf0))
+                # DEALER 对应两帧即可
+                bf_socket.send_multipart([identity, response_bytes])
+
+                bf_messages_received += 1
+                new_msg_received = time.time()
+
+                print(f"[BF] Sent weight to {host} ({bf_messages_received}/{num_tx_subscribers})")
+                f.write(f"     - {host}\n")
+
+        f.flush()
+
+        # ======================== 第三阶段：TX MODE（保持原逻辑） ========================
         print(f"Waiting for {num_tx_subscribers} subscribers to send a TX Mode ...")
 
         messages_received = 0

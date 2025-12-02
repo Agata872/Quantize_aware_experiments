@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 import logging
 import os
 import socket
@@ -6,64 +5,238 @@ import sys
 import threading
 import time
 from datetime import datetime, timedelta
-
 import numpy as np
 import uhd
 import yaml
+import tools
+import argparse
 import zmq
 import queue
-import tools
 
-meas_id = 0
-exp_id = 0
+# =============================================================================
+#                           Experiment Configuration
+# =============================================================================
+# This section defines the default settings and timing parameters
+# used throughout the measurement and loopback procedure.
+# Values can be overridden by entries in the configuration YAML file.
+# =============================================================================
+
+CMD_DELAY = 0.05          # Command delay (50 ms) between USRP instructions
+RX_TX_SAME_CHANNEL = True # True if loopback occurs between the same RF channel
+CLOCK_TIMEOUT = 1000      # Timeout for external clock locking (in ms)
+INIT_DELAY = 0.2          # Initial delay before starting transmission (200 ms)
+RATE = 250e3              # Sampling rate in samples per second (250 kSps)
+LOOPBACK_TX_GAIN = 50 #70     # Empirically determined transmit gain for loopback tests
+RX_GAIN = 22              # Empirically determined receive gain (22 dB without splitter, 27 dB with splitter)
+CAPTURE_TIME = 10         # Duration of each capture in seconds
+FREQ = 0                  # Base frequency offset (Hz); 0 means use default center frequency
+# server_ip = "10.128.52.53"  # Optional remote server address (commented out)
+meas_id = 0               # Measurement identifier
+exp_id = 0                # Experiment identifier
+# =============================================================================
+# =============================================================================
+
 results = []
 
-SWITCH_LOOPBACK_MODE = 0x00000006
+SWITCH_LOOPBACK_MODE = 0x00000006 # which is 110
 SWITCH_RESET_MODE = 0x00000000
 
-# Initialize ZMQ (TX task doesn't send IQ data, but initialization is retained)
 context = zmq.Context()
+
 iq_socket = context.socket(zmq.PUB)
-iq_socket.bind(f"tcp://*:{50002}")
+
+iq_socket.bind(f"tcp://*:{50001}")
 
 HOSTNAME = socket.gethostname()[4:]
 file_open = False
+server_ip = None  # populated by settings.yml
 
-with open(
-    os.path.join(os.path.dirname(__file__), "cal-settings.yml"), "r", encoding="utf-8"
-) as file:
-    vars = yaml.safe_load(file)
-    globals().update(vars)  # update the global variables with the vars in yaml
+# =============================================================================
+#                           Custom Log Formatter
+# =============================================================================
+# This formatter adds timestamps with fractional seconds to log messages,
+# allowing for more precise event timing (useful in measurement systems).
+# =============================================================================
 
-# Setup logger with custom timestamp formatting
 class LogFormatter(logging.Formatter):
+    """Custom log formatter that prints timestamps with fractional seconds."""
+
     @staticmethod
     def pp_now():
+        """Return the current time of day as a formatted string with milliseconds."""
         now = datetime.now()
         return "{:%H:%M}:{:05.2f}".format(now, now.second + now.microsecond / 1e6)
 
     def formatTime(self, record, datefmt=None):
+        """Override the default time formatter to include fractional seconds."""
         converter = self.converter(record.created)
         if datefmt:
-            formatted_date = time.strftime(datefmt, converter)
+            formatted_date = converter.strftime(datefmt)
         else:
             formatted_date = LogFormatter.pp_now()
         return formatted_date
 
+# =============================================================================
+#                           Logger and Channel Configuration
+# =============================================================================
+# This section initializes the global logger and defines the
+# channel mapping used for reference and loopback measurements.
+# =============================================================================
+
+global logger
+global begin_time
+
+connected_to_server = False
+begin_time = 2.0
+
+# -------------------------------------------------------------------------
+# Logger setup
+# -------------------------------------------------------------------------
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
+
+# Stream logs to console
 console = logging.StreamHandler()
-formatter = LogFormatter(fmt="[%(asctime)s] [%(levelname)s] (%(threadName)-10s) %(message)s")
-console.setFormatter(formatter)
 logger.addHandler(console)
 
-# -------------------------------
-# Initialization and setup functions (inherited from original script)
-# -------------------------------
+# Custom log format (includes time, level, and thread name)
+formatter = LogFormatter(
+    fmt="[%(asctime)s] [%(levelname)s] (%(threadName)-10s) %(message)s"
+)
+console.setFormatter(formatter)
+
+# -------------------------------------------------------------------------
+# Topic identifiers for ZMQ or internal messaging
+# -------------------------------------------------------------------------
+TOPIC_CH0 = b"CH0"
+TOPIC_CH1 = b"CH1"
+
+# -------------------------------------------------------------------------
+# Channel configuration depending on whether RX and TX share the same channel
+# -------------------------------------------------------------------------
+if RX_TX_SAME_CHANNEL:
+    # Reference signal received on CH0, loopback on CH1
+    REF_RX_CH = FREE_TX_CH = 0
+    LOOPBACK_RX_CH = LOOPBACK_TX_CH = 1
+    logger.debug("\nPLL REF → CH0 RX\nCH1 TX → CH1 RX\nCH0 TX →")
+else:
+    # Reference and loopback channels are swapped
+    LOOPBACK_RX_CH = FREE_TX_CH = 0
+    REF_RX_CH = LOOPBACK_TX_CH = 1
+    logger.debug("\nPLL REF → CH1 RX\nCH1 TX → CH0 RX\nCH0 TX →")
+# =============================================================================
+# =============================================================================
+
+
+def rx_ref(usrp, rx_streamer, quit_event, duration, result_queue, start_time=None):
+    # https://files.ettus.com/manual/page_sync.html#sync_phase_cordics
+    # The CORDICs are reset at each start-of-burst command, so users should ensure that every start-of-burst also has a time spec set.
+    logger.debug(f"GAIN IS CH0: {usrp.get_rx_gain(0)} CH1: {usrp.get_rx_gain(1)}")
+
+    global results
+    num_channels = rx_streamer.get_num_channels()
+    max_samps_per_packet = rx_streamer.get_max_num_samps()
+    buffer_length = int(duration * RATE * 2)
+    iq_data = np.empty((num_channels, buffer_length), dtype=np.complex64)
+
+    recv_buffer = np.zeros((num_channels, max_samps_per_packet), dtype=np.complex64)
+    rx_md = uhd.types.RXMetadata()
+    # Craft and send the Stream Command
+    stream_cmd = uhd.types.StreamCMD(uhd.types.StreamMode.start_cont)
+    # The stream now parameter controls when the stream begins. When true, the device will begin streaming ASAP. When false, the device will begin streaming at a time specified by time_spec.
+    stream_cmd.stream_now = False
+    timeout = 1.0
+    if start_time is not None:
+        stream_cmd.time_spec = start_time
+        time_diff = start_time.get_real_secs() - usrp.get_time_now().get_real_secs()
+        if time_diff > 0:
+            timeout = 1.0 + time_diff
+    else:
+        stream_cmd.time_spec = uhd.types.TimeSpec(
+            usrp.get_time_now().get_real_secs() + INIT_DELAY + 0.1
+        )
+    rx_streamer.issue_stream_cmd(stream_cmd)
+    try:
+        num_rx = 0
+        while not quit_event.is_set():
+            try:
+                num_rx_i = rx_streamer.recv(recv_buffer, rx_md, timeout)
+                if rx_md.error_code != uhd.types.RXMetadataErrorCode.none:
+                    logger.error(rx_md.error_code)
+                else:
+                    if num_rx_i > 0:
+                        # samples = recv_buffer[:,:num_rx_i]
+                        # send_rx(samples)
+                        samples = recv_buffer[:, :num_rx_i]
+                        if num_rx + num_rx_i > buffer_length:
+                            logger.error(
+                                "more samples received than buffer long, not storing the data"
+                            )
+                        else:
+                            iq_data[:, num_rx : num_rx + num_rx_i] = samples
+                            # threading.Thread(target=send_rx,
+                            #                  args=(samples,)).start()
+                            num_rx += num_rx_i
+            except RuntimeError as ex:
+                logger.error("Runtime error in receive: %s", ex)
+                return
+    except KeyboardInterrupt:
+        pass
+    finally:
+        logger.debug("CTRL+C is pressed or duration is reached, closing off ")
+        rx_streamer.issue_stream_cmd(
+            uhd.types.StreamCMD(uhd.types.StreamMode.stop_cont)
+        )
+        iq_samples = iq_data[:, int(RATE // 10) : num_rx]
+
+        np.save(file_name_state, iq_samples)
+
+        phase_ch0, freq_slope_ch0 = tools.get_phases_and_apply_bandpass(iq_samples[0, :])
+        phase_ch1, freq_slope_ch1 = tools.get_phases_and_apply_bandpass(iq_samples[1, :])
+
+        logger.debug("Frequency offset CH0: %.4f", freq_slope_ch0 / (2 * np.pi))
+        logger.debug("Frequency offset CH1: %.4f", freq_slope_ch1 / (2 * np.pi))
+
+        logger.debug("Phase offset CH0: %.4f", np.rad2deg(phase_ch0).mean())
+        logger.debug("Phase offset CH1: %.4f", np.rad2deg(phase_ch1).mean())
+
+        phase_diff = tools.to_min_pi_plus_pi(phase_ch0 - phase_ch1, deg=False)
+
+        # phase_diff = phase_ch0 - phase_ch1
+
+        _circ_mean = tools.circmean(phase_diff, deg=False)
+        _mean = np.mean(phase_diff)
+
+        logger.debug("Diff cirmean and mean: %.6f", _circ_mean - _mean)
+
+        result_queue.put(_mean)
+
+        avg_ampl = np.mean(np.abs(iq_samples), axis=1)
+        # var_ampl = np.var(np.abs(iq_samples), axis=1)
+
+        max_I = np.max(np.abs(np.real(iq_samples)), axis=1)
+        max_Q = np.max(np.abs(np.imag(iq_samples)), axis=1)
+
+        logger.debug(
+            "MAX AMPL IQ CH0: I %.6f Q %.6f CH1:I %.6f Q %.6f",
+            max_I[0],
+            max_Q[0],
+            max_I[1],
+            max_Q[1],
+        )
+
+        logger.debug(
+            "AVG AMPL IQ CH0: %.6f CH1: %.6f",
+            avg_ampl[0],
+            avg_ampl[1],
+        )
+
+
 def setup_clock(usrp, clock_src, num_mboards):
     usrp.set_clock_source(clock_src)
     logger.debug("Now confirming lock on clock signals...")
     end_time = datetime.now() + timedelta(milliseconds=CLOCK_TIMEOUT)
+    # Lock onto clock signals for all mboards
     for i in range(num_mboards):
         is_locked = usrp.get_mboard_sensor("ref_locked", i)
         while (not is_locked) and (datetime.now() < end_time):
@@ -76,21 +249,33 @@ def setup_clock(usrp, clock_src, num_mboards):
             logger.debug("Clock signals are locked")
     return True
 
+
 def setup_pps(usrp, pps):
+    """Setup the PPS source"""
+
     logger.debug("Setting PPS")
     usrp.set_time_source(pps)
     return True
 
+
 def print_tune_result(tune_res):
     logger.debug(
-        "Tune Result:\n    Target RF  Freq: %.6f (MHz)\n Actual RF  Freq: %.6f (MHz)\n Target DSP Freq: %.6f (MHz)\n Actual DSP Freq: %.6f (MHz)\n",
+        "Tune Result:\n    Target RF  Freq: %.6f (MHz)\n Actual RF  Freq: %.6f (MHz)\n Target DSP Freq: %.6f "
+        "(MHz)\n "
+        "Actual DSP Freq: %.6f (MHz)\n",
         (tune_res.target_rf_freq / 1e6),
         (tune_res.actual_rf_freq / 1e6),
         (tune_res.target_dsp_freq / 1e6),
         (tune_res.actual_dsp_freq / 1e6),
     )
 
+
 def tune_usrp(usrp, freq, channels, at_time):
+    """Synchronously set the device's frequency.
+    If a channel is using an internal LO it will be tuned first
+    and every other channel will be manually tuned based on the response.
+    This is to account for the internal LO channel having an offset in the actual DSP frequency.
+    Then all channels are synchronously tuned."""
     treq = uhd.types.TuneRequest(freq)
     usrp.set_command_time(uhd.types.TimeSpec(at_time))
     treq.dsp_freq = 0.0
@@ -120,64 +305,149 @@ def tune_usrp(usrp, freq, channels, at_time):
         time.sleep(0.01)
     logger.info("TX LO is locked")
 
-def setup(usrp):
+
+def wait_till_go_from_server(ip, _connect=True):
+
+    global meas_id, file_open, data_file, file_name
+    # Connect to the publisher's address
+    logger.debug("Connecting to server %s.", ip)
+    sync_socket = context.socket(zmq.SUB)
+
+    alive_socket = context.socket(zmq.REQ)
+
+    sync_socket.connect(f"tcp://{ip}:{5557}")
+    alive_socket.connect(f"tcp://{ip}:{5558}")
+    # Subscribe to topics
+    sync_socket.subscribe("")
+
+    logger.debug("Sending ALIVE")
+    alive_socket.send_string(HOSTNAME)
+    # Receives a string format message
+    logger.debug("Waiting on SYNC from server %s.", ip)
+
+    meas_id, unique_id = sync_socket.recv_string().split(" ")
+
+    file_name = f"data_{HOSTNAME}_{unique_id}_{meas_id}"
+
+    if not file_open:
+        data_file = open(f"data_{HOSTNAME}_{unique_id}.txt", "a")
+        file_open = True
+
+    logger.debug(meas_id)
+
+    alive_socket.close()
+    sync_socket.close()
+
+def send_usrp_in_tx_mode(ip):
+    tx_mode_socket = context.socket(zmq.REQ)
+    tx_mode_socket.connect(f"tcp://{ip}:{5559}")
+    logger.debug("USRP IN TX MODE")
+    tx_mode_socket.send_string(HOSTNAME)
+    tx_mode_socket.close()
+
+
+def setup(usrp, server_ip, connect=True):
     rate = RATE
     mcr = 20e6
-    assert (mcr / rate).is_integer(), f"The masterclock rate {mcr} should be an integer multiple of the sampling rate {rate}"
+    assert (
+        mcr / rate
+    ).is_integer(), f"The masterclock rate {mcr} should be an integer multiple of the sampling rate {rate}"
+    # Manual selection of master clock rate may also be required to synchronize multiple B200 units in time.
     usrp.set_master_clock_rate(mcr)
-    channels = [0,1]
+    channels = [0, 1]
     setup_clock(usrp, "external", usrp.get_num_mboards())
     setup_pps(usrp, "external")
+    # smallest as possible (https://files.ettus.com/manual/page_usrp_b200.html#b200_fe_bw)
     rx_bw = 200e3
     for chan in channels:
         usrp.set_rx_rate(rate, chan)
         usrp.set_tx_rate(rate, chan)
+        # NOTE DC offset is enabled
         usrp.set_rx_dc_offset(True, chan)
         usrp.set_rx_bandwidth(rx_bw, chan)
         usrp.set_rx_agc(False, chan)
-    # TX-side settings: use the specified TX channel (based on RX_TX_SAME_CHANNEL, signal is transmitted on FREE_TX_CH)
-    usrp.set_tx_gain(
-        PILOT_TX_GAIN, PILOT_TX_CH
-    )
+    # specific settings from loopback/REF PLL
+    usrp.set_tx_gain(LOOPBACK_TX_GAIN, LOOPBACK_TX_CH)
+    usrp.set_tx_gain(LOOPBACK_TX_GAIN, FREE_TX_CH)
 
+    usrp.set_rx_gain(LOOPBACK_RX_GAIN, LOOPBACK_RX_CH)
+    usrp.set_rx_gain(REF_RX_GAIN, REF_RX_CH)
+    # streaming arguments
     st_args = uhd.usrp.StreamArgs("fc32", "sc16")
     st_args.channels = channels
+    # streamers
     tx_streamer = usrp.get_tx_stream(st_args)
     rx_streamer = usrp.get_rx_stream(st_args)
-    tune_usrp(usrp, FREQ, channels, at_time=INIT_DELAY)
-    logger.info(f"USRP tuned and setup. (Current time: {usrp.get_time_now().get_real_secs()})")
+    # Step1: wait for the last pps time to transition to catch the edge
+    # Step2: set the time at the next pps (synchronous for all boards)
+    # this is better than set_time_next_pps as we wait till the next PPS to transition and after that we set the time.
+    # this ensures that the FPGA has enough time to clock in the new timespec (otherwise it could be too close to a PPS edge)
+    wait_till_go_from_server(server_ip, connect)
+    logger.info("Setting device timestamp to 0...")
+    usrp.set_time_unknown_pps(uhd.types.TimeSpec(0.0))
+    logger.debug("[SYNC] Resetting time.")
+    logger.info(f"RX GAIN PROFILE CH0: {usrp.get_rx_gain_names(0)}")
+    logger.info(f"RX GAIN PROFILE CH1: {usrp.get_rx_gain_names(1)}")
+    # we wait 2 seconds to ensure a PPS rising edge occurs and latches the 0.000s value to both USRPs.
+    time.sleep(2)
+    tune_usrp(usrp, FREQ, channels, at_time=begin_time)
+    logger.info(
+        f"USRP has been tuned and setup. ({usrp.get_time_now().get_real_secs()})"
+    )
     return tx_streamer, rx_streamer
 
-# -------------------------------
-# Transmission-related functions: tx_ref, tx_thread, tx_meta_thread
-# -------------------------------
-# def tx_ref(usrp, tx_streamer, quit_event, phase, amplitude, start_time):
-#     num_channels = tx_streamer.get_num_channels()
-#     max_samps_per_packet = tx_streamer.get_max_num_samps()
-#     amplitude = np.asarray(amplitude)
-#     phase = np.asarray(phase)
-#     sample = amplitude * np.exp(phase * 1j)
-#     transmit_buffer = np.ones((num_channels, 1000 * max_samps_per_packet), dtype=np.complex64)
 
-#     transmit_buffer[0, :] *= sample[0]
-#     if num_channels > 1:
-#         transmit_buffer[1, :] *= sample[1]
-#     tx_md = uhd.types.TXMetadata()
-#     if start_time is not None:
-#         tx_md.time_spec = start_time
-#     else:
-#         tx_md.time_spec = uhd.types.TimeSpec(usrp.get_time_now().get_real_secs() + INIT_DELAY)
-#     tx_md.has_time_spec = True
-#     logger.info("TX will start at time: %.6f", tx_md.time_spec.get_real_secs())
-#     try:
-#         while not quit_event.is_set():
-#             tx_streamer.send(transmit_buffer, tx_md)
-#     except KeyboardInterrupt:
-#         logger.debug("CTRL+C pressed in TX")
-#     finally:
-#         tx_md.end_of_burst = True
-#         tx_streamer.send(np.zeros((num_channels, 0), dtype=np.complex64), tx_md)
-#         logger.info("TX finished.")
+def rx_thread(usrp, rx_streamer, quit_event, duration, res, start_time=None):
+    _rx_thread = threading.Thread(
+        target=rx_ref,
+        args=(
+            usrp,
+            rx_streamer,
+            quit_event,
+            duration,
+            res,
+            start_time,
+        ),
+    )
+    _rx_thread.name = "RX_thread"
+    _rx_thread.start()
+    return _rx_thread
+
+
+def tx_async_th(tx_streamer, quit_event):
+    async_metadata = uhd.types.TXAsyncMetadata()
+    try:
+        while not quit_event.is_set():
+            if not tx_streamer.recv_async_msg(async_metadata, 0.01):
+                continue
+            else:
+                if async_metadata.event_code != uhd.types.TXMetadataEventCode.burst_ack:
+                    logger.error(async_metadata.event_code)
+    except KeyboardInterrupt:
+        pass
+
+
+def delta(usrp, at_time):
+    return at_time - usrp.get_time_now().get_real_secs()
+
+
+def get_current_time(usrp):
+    return usrp.get_time_now().get_real_secs()
+
+
+def tx_thread(
+    usrp, tx_streamer, quit_event, phase=[0, 0], amplitude=[0.8, 0.8], start_time=None
+):
+    tx_thr = threading.Thread(
+        target=tx_ref,
+        args=(usrp, tx_streamer, quit_event, phase, amplitude, start_time),
+    )
+
+    tx_thr.name = "TX_thread"
+    tx_thr.start()
+
+    return tx_thr
+
 
 def tx_ref(usrp, tx_streamer, quit_event, phase, amplitude, start_time=None):
     """
@@ -224,10 +494,9 @@ def tx_ref(usrp, tx_streamer, quit_event, phase, amplitude, start_time=None):
 
     # Schedule the transmission start time
     if start_time is not None:
+        # tx_md.time_spec = start_time
         if isinstance(start_time, (int, float)):
-            start_time = uhd.types.TimeSpec(
-            usrp.get_time_now().get_real_secs() + float(start_time)
-        )
+            start_time = uhd.types.TimeSpec(float(start_time))
         tx_md.time_spec = start_time
     else:
         tx_md.time_spec = uhd.types.TimeSpec(
@@ -248,87 +517,366 @@ def tx_ref(usrp, tx_streamer, quit_event, phase, amplitude, start_time=None):
         # Send an end-of-burst (EOB) packet to properly terminate streaming
         tx_md.end_of_burst = True
         tx_streamer.send(np.zeros((num_channels, 0), dtype=np.complex64), tx_md)
-def tx_thread(
-    usrp, tx_streamer, quit_event, phase=[0, 0], amplitude=[0.8, 0.8], start_time=None
-):
-    tx_thr = threading.Thread(
-        target=tx_ref,
-        args=(usrp, tx_streamer, quit_event, phase, amplitude, start_time),
-    )
-    tx_thr.name = "TX_thread"
-    tx_thr.start()
-    return tx_thr
 
-def tx_async_th(tx_streamer, quit_event):
-    async_metadata = uhd.types.TXAsyncMetadata()
-    try:
-        while not quit_event.is_set():
-            if not tx_streamer.recv_async_msg(async_metadata, 0.01):
-                continue
-            else:
-                if async_metadata.event_code != uhd.types.TXMetadataEventCode.burst_ack:
-                    logger.error(async_metadata.event_code)
-    except KeyboardInterrupt:
-        pass
 
 def tx_meta_thread(tx_streamer, quit_event):
     tx_meta_thr = threading.Thread(target=tx_async_th, args=(tx_streamer, quit_event))
+
     tx_meta_thr.name = "TX_META_thread"
     tx_meta_thr.start()
     return tx_meta_thr
 
-def delta(usrp, at_time):
-    return at_time - usrp.get_time_now().get_real_secs()
 
-def get_current_time(usrp):
-    return usrp.get_time_now().get_real_secs()
+def starting_in(usrp, at_time):
+    return f"Starting in {delta(usrp, at_time):.2f}s"
+
+
+def measure_pilot(
+    usrp, rx_streamer, quit_event, result_queue,
+    start_pilot, stop_pilot,
+):
+    """
+    Perform a pilot measurement where THIS USRP ONLY RECEIVES a pilot
+    transmitted by another device.
+    """
+    usrp.set_rx_antenna(PILOT_RX_ANT, PILOT_RX_CH)
+    usrp.set_rx_antenna(REF_RX_ANT, REF_RX_CH)
+    logger.debug("########### Measure PILOT ###########")
+
+    # ------------------------------------------------------------
+    # 0. Check pilot timing
+    # ------------------------------------------------------------
+    if stop_pilot <= start_pilot:
+        raise ValueError(f"stop_pilot ({stop_pilot}) must be > start_pilot ({start_pilot})")
+
+    # ------------------------------------------------------------
+    # 1. Define RX start time (no local TX here)
+    # ------------------------------------------------------------
+    start_time = uhd.types.TimeSpec(start_pilot)
+    logger.debug(starting_in(usrp, start_pilot))
+
+    # ------------------------------------------------------------
+    # 2. Start ONLY the RX thread to capture the pilot
+    # ------------------------------------------------------------
+    rx_thr = rx_thread(
+        usrp=usrp,
+        rx_streamer=rx_streamer,
+        quit_event=quit_event,
+        duration=stop_pilot - start_pilot, 
+        res=result_queue,
+        start_time=start_time,
+    )
+
+    # ------------------------------------------------------------
+    # 3. Wait until STOP_Pilot plus some safety margin (delta)
+    # ------------------------------------------------------------
+    wait_time = (stop_pilot - start_pilot) + delta(usrp, start_pilot)
+    if wait_time > 0:
+        time.sleep(wait_time)
+
+    # ------------------------------------------------------------
+    # 4. Signal RX thread to stop and wait for it to finish
+    # ------------------------------------------------------------
+    quit_event.set()
+    rx_thr.join()
+
+    # ------------------------------------------------------------
+    # 5. Clear the quit event flag to prepare for the next measurement
+    # ------------------------------------------------------------
+    quit_event.clear()
+
+
+
+def measure_loopback(
+    usrp, tx_streamer, rx_streamer, quit_event, result_queue,
+    start_lb, stop_lb,
+):
+    # ------------------------------------------------------------
+    # Function: measure_loopback
+    # Purpose:
+    #   This function performs a loopback measurement using a USRP device.
+    #   It transmits a known signal on one channel and simultaneously
+    #   receives it on another channel (loopback). The result is captured,
+    #   stored, and processed later.
+    # ------------------------------------------------------------
+
+    logger.debug("########### Measure LOOPBACK ###########")
+
+    # ------------------------------------------------------------
+    # 0. Check loopback timing
+    # ------------------------------------------------------------
+    if stop_lb <= start_lb:
+        raise ValueError(f"stop_lb ({stop_lb}) must be > start_lb ({start_lb})")
+
+    # ------------------------------------------------------------
+    # 1. Configure transmit signal amplitudes
+    # ------------------------------------------------------------
+    amplitudes = [0.0, 0.0]              # Initialize amplitude array for both channels
+    amplitudes[LOOPBACK_TX_CH] = 0.8     # Enable TX on the selected loopback channel
+
+    # ------------------------------------------------------------
+    # 2. Set the transmission start time (START_LB)
+    # ------------------------------------------------------------
+    start_time = uhd.types.TimeSpec(start_lb)
+    logger.debug(starting_in(usrp, start_lb))
+
+    # ------------------------------------------------------------
+    # 3. (Legacy) Access user settings interface for low-level FPGA control
+    #    Used to switch the USRP into "loopback mode" by writing to
+    #    a register in the user settings interface.
+    #    NOTE: This interface is no longer available in UHD 4.x.
+    # ------------------------------------------------------------
+    user_settings = None
+    try:
+        user_settings = usrp.get_user_settings_iface(1)
+        if user_settings:
+            # Read current register value (for debug)
+            logger.debug(user_settings.peek32(0))
+            # Write a value to activate loopback mode
+            user_settings.poke32(0, SWITCH_LOOPBACK_MODE)
+            # Read again to verify the register value was updated
+            logger.debug(user_settings.peek32(0))
+        else:
+            logger.error("Cannot write to user settings.")
+    except Exception as e:
+        logger.error(e)
+
+    # ------------------------------------------------------------
+    # 4. Start transmit (TX), metadata, and receive (RX) threads
+    # ------------------------------------------------------------
+    tx_thr = tx_thread(
+        usrp,
+        tx_streamer,
+        quit_event,
+        amplitude=amplitudes,
+        phase=[0.0, 0.0],
+        start_time=start_time,
+    )
+
+    # Thread responsible for handling TX metadata (timestamps, etc.)
+    tx_meta_thr = tx_meta_thread(tx_streamer, quit_event)
+
+    # Thread that captures received samples during loopback
+    rx_thr = rx_thread(
+        usrp,
+        rx_streamer,
+        quit_event,
+        duration=stop_lb - start_lb,
+        res=result_queue,
+        start_time=start_time,
+    )
+
+    # 5. Wait until STOP_LB (from arguments) plus some safety margin (delta)
+    wait_time = (stop_lb - start_lb) + delta(usrp, start_lb)
+    if wait_time > 0:
+        time.sleep(wait_time)
+
+    # ------------------------------------------------------------
+    # 6. Signal all threads to stop and wait for them to finish
+    # ------------------------------------------------------------
+    quit_event.set()   # Triggers thread termination
+    tx_thr.join()
+    rx_thr.join()
+    tx_meta_thr.join()
+
+    # ------------------------------------------------------------
+    # 7. Reset the RF switch control (disable loopback mode)
+    # ------------------------------------------------------------
+    if user_settings:
+        user_settings.poke32(0, SWITCH_RESET_MODE)
+
+    # ------------------------------------------------------------
+    # 8. Clear the quit event flag to prepare for the next measurement
+    # ------------------------------------------------------------
+    quit_event.clear()
+
+
+
+def tx_phase_coh(usrp, tx_streamer, quit_event, phase_corr, start_bf, long_time=True):
+    """
+    Transmit a coherent signal with an adjusted phase correction.
+
+    This function starts a transmission thread that sends a signal with
+    a specific phase correction on the loopback transmit channel.
+    It also launches a metadata thread to handle UHD transmission metadata.
+    The function blocks until the transmission time has elapsed, then stops
+    both threads cleanly.
+
+    Args:
+        usrp: The USRP device instance.
+        tx_streamer: UHD transmit streamer.
+        quit_event: Threading event to signal thread termination.
+        phase_corr (float): Phase correction value (in radians).
+        at_time (float): Scheduled start time for transmission.
+        long_time (bool): If True, use TX_TIME; otherwise, transmit for 10 seconds.
+    """
+    logger.debug("########### TX with adjusted phases ###########")
+
+    # Initialize arrays for phase and amplitude per TX channel
+    phases = [0.0, 0.0]
+    amplitudes = [0.0, 0.0]
+
+    # Apply phase correction and amplitude to the loopback transmit channel
+    phases[LOOPBACK_TX_CH] = phase_corr
+    amplitudes[LOOPBACK_TX_CH] = 0.8
+
+    logger.debug(f"Phases: {phases}")
+    logger.debug(f"amplitudes: {amplitudes}")
+    logger.debug(f"TX Gain: {FREE_TX_GAIN}")
+
+    # Set the transmit gain for the active channel
+    usrp.set_tx_gain(FREE_TX_GAIN, LOOPBACK_TX_CH)
+
+    # Define the UHD transmission start time (START_BF)
+    start_time = uhd.types.TimeSpec(start_bf)
+
+    # Start the transmit thread
+    tx_thr = tx_thread(
+        usrp,
+        tx_streamer,
+        quit_event,
+        amplitude=amplitudes,
+        phase=phases,
+        start_time=start_time,
+    )
+
+    # Start the metadata monitoring thread
+    tx_meta_thr = tx_meta_thread(tx_streamer, quit_event)
+
+    # Send USRP is in TX mode for scope measurements
+    send_usrp_in_tx_mode(server_ip)
+
+    # Allow transmission to continue for the configured duration
+    if long_time:
+        time.sleep(TX_TIME + delta(usrp, start_bf))
+    else:
+        time.sleep(10.0 + delta(usrp, start_bf))
+
+    # Signal all threads to stop
+    quit_event.set()
+
+    # Ensure both threads terminate cleanly
+    tx_thr.join()
+    tx_meta_thr.join()
+
+    logger.debug("Transmission completed successfully")
+
+    return tx_thr, tx_meta_thr
+
+
+def parse_arguments():
+    """
+    Parse command-line arguments for the beamforming (BF) application.
+
+    This function checks for the optional server IP argument (-i or --ip)
+    and updates the global variable `server_ip` if provided.
+
+    Example:
+        python script.py -i 192.168.1.10
+    """
+    global server_ip
+
+    # Create an argument parser with a brief description
+    parser = argparse.ArgumentParser(description="Beamforming control script")
+
+    # Optional argument for specifying the server IP
+    parser.add_argument(
+        "-i",
+        "--ip",
+        type=str,
+        help="IP address of the server (optional)",
+        required=False,
+    )
+
+    # Parse the command-line arguments
+    args = parser.parse_args()
+
+    # If the user provided an IP address, apply it
+    if args.ip:
+        logger.debug(f"Setting server IP to: {args.ip}")
+        server_ip = args.ip
+
 # -------------------------------
 # Main function: run transmission task (after synchronization control)
 # -------------------------------
 def main():
+    global meas_id, file_name_state
+
+    parse_arguments()
+
     try:
-        # Initialize USRP device and load FPGA image
-        usrp = uhd.usrp.MultiUSRP("enable_user_regs, fpga=usrp_b210_fpga_loopback_ctrl.bin, mode_n=integer")
+        # Attempt to open and load calibration settings from the YAML file
+        with open(os.path.join(os.path.dirname(__file__), "cal-settings.yml"), "r") as file:
+            vars = yaml.safe_load(file)
+            globals().update(vars)  # update the global variables with the vars in yaml
+    except FileNotFoundError:
+        logger.error("Calibration file 'cal-settings.yml' not found in the current directory.")
+        exit()
+    except yaml.YAMLError as e:
+        logger.error(f"Error parsing 'cal-settings.yml': {e}")
+        exit()
+    except Exception as e:
+        logger.error(f"Unexpected error while loading calibration settings: {e}")
+        exit()
+
+    try:
+        # Get current path
+        script_dir = os.path.dirname(os.path.realpath(__file__))
+
+        # FPGA file path
+        fpga_path = os.path.join(script_dir, "usrp_b210_fpga_loopback.bin")
+
+        # Initialize USRP device with custom FPGA image and integer mode
+        usrp = uhd.usrp.MultiUSRP(
+            "enable_user_regs, " \
+            f"fpga={fpga_path}, " \
+            "mode_n=integer"
+        )
         logger.info("Using Device: %s", usrp.get_pp_string())
 
-        # =========================
-        # New: Communicate with sync server
-        # =========================
-        # Please modify the IP below to match your actual sync server IP
-        sync_context = zmq.Context()
-        # Create REQ socket to communicate with server's "alive" port (5558)
-        alive_client = sync_context.socket(zmq.REQ)
-        alive_client.connect(f"tcp://{server_ip}:5558")
-        alive_message = f"{HOSTNAME} TX alive"
-        logger.info("Sending alive message to sync server: %s", alive_message)
-        alive_client.send_string(alive_message)
-        reply = alive_client.recv_string()
-        logger.info("Received alive reply from sync server: %s", reply)
+        # -------------------------------------------------------------------------
+        # STEP 0: Preparations
+        # -------------------------------------------------------------------------
 
-        # Create SUB socket to listen to sync messages (port 5557)
-        sync_subscriber = sync_context.socket(zmq.SUB)
-        sync_subscriber.connect(f"tcp://{server_ip}:5557")
-        sync_subscriber.setsockopt_string(zmq.SUBSCRIBE, "")
-        logger.info("Waiting for SYNC message from sync server...")
-        sync_msg = sync_subscriber.recv_string()
-        logger.info("Received SYNC message: %s", sync_msg)
+        # Set up TX and RX streamers and establish connection
+        tx_streamer, rx_streamer = setup(usrp, server_ip, connect=True)
 
-        logger.info("Setting device timestamp to 0...")
-        usrp.set_time_unknown_pps(uhd.types.TimeSpec(0.0))
-        logger.debug("[SYNC] Resetting time.")
-        logger.info(f"RX GAIN PROFILE CH0: {usrp.get_rx_gain_names(0)}")
-        logger.info(f"RX GAIN PROFILE CH1: {usrp.get_rx_gain_names(1)}")
-        time.sleep(2)  # Wait for PPS rising edge
-
-        # Complete hardware setup, synchronization, tuning, and get TX and RX streamers
-        tx_streamer, _ = setup(usrp)
+        # Event used to control thread termination
         quit_event = threading.Event()
-        # =========================
+
+        # Queue to collect measurement results and communicate between threads
+        result_queue = queue.Queue()
+        # -------------------------------------------------------------------------
+        # STEP 1: Perform internal loopback measurement with reference signal
+        # -------------------------------------------------------------------------
+        file_name_state = file_name + "_loopback"
+
+        logger.info("Scheduled LOOPBACK start time: %.6f", START_LB)
+        measure_loopback(
+            usrp,
+            tx_streamer,
+            rx_streamer,
+            quit_event,
+            result_queue,
+            START_LB,
+            STOP_LB,
+        )
+
+        # Retrieve loopback phase result
+        phi_LB = result_queue.get()
+
+        # Print loopback phase
+        logger.info("Phase pilot reference signal in rad: %s", phi_LB)
+        logger.info("Phase pilot reference signal in degrees: %s", np.rad2deg(phi_LB))
+
+        # -------------------------------------------------------------------------
+        # STEP 1: Perform transmission of pilot signal
+        # -------------------------------------------------------------------------
 
         # After synchronization, schedule TX based on current time
 
         # A short delay (e.g., 0.2s) can be added to ensure TX starts after config
-        start_time_spec = uhd.types.TimeSpec(START_Pilot)
+        start_time_spec = uhd.types.TimeSpec(START_Pilot) - 1
         logger.info("Scheduled TX start time: %.6f", START_Pilot)
         # Start TX thread with amplitude=1.0, phase=0.0 (both channels)
 
@@ -336,12 +884,14 @@ def main():
 
         amplitudes = [0.0,0.0] 
         amplitudes[PILOT_TX_CH] = 0.8
-
+        phase_corr=phi_LB
+        logger.info("Phase correction in rad: %s", phase_corr)
+        logger.info("Phase correction in degrees: %s", np.rad2deg(phase_corr))   
         tx_thr = tx_thread(
             usrp,
             tx_streamer,
             quit_event,
-            phase=[0.0, 0.0],
+            phase=phase_corr,
             amplitude=amplitudes,
             start_time=start_time_spec,
         )

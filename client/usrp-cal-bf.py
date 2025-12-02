@@ -796,6 +796,50 @@ def parse_arguments():
         logger.debug(f"Setting server IP to: {args.ip}")
         server_ip = args.ip
 
+        
+def get_BF(ip, phase):
+    import json
+
+    logger.debug("Connecting to server %s.", ip)
+
+    dealer_socket = context.socket(zmq.DEALER)
+
+    # Give this DEALER a unique identity so the ROUTER can reply properly
+
+    dealer_socket.setsockopt_string(zmq.IDENTITY, HOSTNAME)
+
+    dealer_socket.connect(f"tcp://{server_ip}:5560")
+
+    logger.debug("Sending CSI")
+
+    # Create a message dict with CSI (complex split into real and imag)
+    msg = {"host": HOSTNAME, "csi_phase": phase}
+
+    # Serialize to JSON and send
+    dealer_socket.send(json.dumps(msg).encode())
+    logger.debug("Message sent, waiting for response...")
+
+    # Wait for response
+    poller = zmq.Poller()
+    poller.register(dealer_socket, zmq.POLLIN)
+    socks = dict(poller.poll(30000))
+
+    result = None
+
+    if dealer_socket in socks and socks[dealer_socket] == zmq.POLLIN:
+        reply = dealer_socket.recv()
+        logger.debug(f"Raw reply: {reply!r}")
+        response = json.loads(reply.decode())
+        print(f"[{HOSTNAME}] Received: {response}")
+        # Reconstruct complex number
+        result = complex(response["real"], response["imag"])
+        logger.debug("Received response: %s", result)
+    else:
+        print(f"[{HOSTNAME}] No reply from server, timed out.")
+
+    dealer_socket.close()
+
+    return result
 
 def main():
     global meas_id, file_name_state
@@ -849,29 +893,9 @@ def main():
         # Queue to collect measurement results and communicate between threads
         result_queue = queue.Queue()
 
-        # -------------------------------------------------------------------------
-        # STEP 1: Perform loopback measurement with reference signal
-        # -------------------------------------------------------------------------
 
-        # # --- Perform pilot measurement ---
-        file_name_state = file_name + "_pilot"
-        logger.info("Scheduled pilot measurement start time: %.6f", START_Pilot)
-        measure_pilot(
-            usrp,
-            rx_streamer,
-            quit_event,
-            result_queue,
-            START_Pilot,
-            STOP_Pilot,
-        )
-
-        # Retrieve pilot phase result
-        PHI_PR_1 = result_queue.get()
-
-        # Print pilot phase
-        logger.info("Phase pilot reference signal: %s", PHI_PR_1)
         # -------------------------------------------------------------------------
-        # STEP 2: Perform internal loopback measurement with reference signal
+        # STEP 1: Perform internal loopback measurement with reference signal
         # -------------------------------------------------------------------------
 
         file_name_state = file_name + "_loopback"
@@ -894,7 +918,27 @@ def main():
         logger.info("Phase pilot reference signal in rad: %s", phi_LB)
         logger.info("Phase pilot reference signal in degrees: %s", np.rad2deg(phi_LB))
 
-        # start_next_cmd += cmd_time + 2.0  # Schedule next command
+        # -------------------------------------------------------------------------
+        # STEP 2: Perform pilot measurement with reference signal
+        # -------------------------------------------------------------------------
+
+        # # --- Perform pilot measurement ---
+        file_name_state = file_name + "_pilot"
+        logger.info("Scheduled pilot measurement start time: %.6f", START_Pilot)
+        measure_pilot(
+            usrp,
+            rx_streamer,
+            quit_event,
+            result_queue,
+            START_Pilot,
+            STOP_Pilot,
+        )
+
+        # Retrieve pilot phase result
+        PHI_PR_1 = result_queue.get()
+
+        # Print pilot phase
+        logger.info("Phase pilot reference signal: %s", PHI_PR_1)
 
         # -------------------------------------------------------------------------
         # STEP 3: Load cable phase correction from YAML configuration (if available)
@@ -911,6 +955,10 @@ def main():
             except yaml.YAMLError as exc:
                 print(exc)
 
+        PHI_CSI = PHI_PR_1 - np.deg2rad(phi_cable)
+        bf_weight = get_BF(server_ip, PHI_CSI)
+        phi_rad = np.angle(bf_weight)
+        logger.info("Phase correction in rad: %f", phi_rad)
         # -------------------------------------------------------------------------
         # STEP 4: Add additional phase to ensure right measurement with the scope
         # -------------------------------------------------------------------------
@@ -929,27 +977,23 @@ def main():
         # -------------------------------------------------------------------------
         # STEP 5: Benchmark without phase-aligned beamforming
         # -------------------------------------------------------------------------
-        
+        phase_corr=phi_LB - np.deg2rad(phi_cable) + phi_rad
+        logger.info("Phase correction in rad: %s", phase_corr)
+        logger.info("Phase correction in degrees: %s", np.rad2deg(phase_corr))    
+
         alive_socket = context.socket(zmq.REQ)
         alive_socket.connect(f"tcp://{server_ip}:{5558}")
         logger.debug("Sending TX MODE")
         alive_socket.send_string(f"{HOSTNAME} TX")
         alive_socket.close()
 
-        PHI_CSI = PHI_PR_1 - np.deg2rad(phi_cable)
-        # PHI_CSI = PHI_PR_1 - np.deg2rad(phi_cable) + np.deg2rad(phi_offset)
-        phase_corr=phi_LB - np.deg2rad(phi_cable) + PHI_CSI
-        logger.info("Phase correction in rad: %s", phase_corr)
-        logger.info("Phase correction in degrees: %s", np.rad2deg(phase_corr))
 
         logger.info("Scheduled downlink start time: %.6f", START_BF)
         tx_phase_coh(
             usrp,
             tx_streamer,
             quit_event,
-            # phase_corr=phi_LB + phi_P + np.deg2rad(phi_cable),
-            # phase_corr=phi_LB - np.deg2rad(phi_cable) + np.deg2rad(phi_offset),
-            phase_corr=phi_LB - np.deg2rad(phi_cable) + PHI_CSI,
+            phase_corr=phase_corr,
             start_bf=START_BF, 
             long_time=False, # Set long_time True if you want to transmit longer than 10 seconds
         )

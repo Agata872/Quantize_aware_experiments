@@ -1,5 +1,5 @@
 ---
-- name: Pull GitHub repo on ceiling (simplified)
+- name: Pull GitHub repo on ceiling
   hosts: Test
   tasks:
     - name: Clone Quantize_aware_experiments repo via HTTPS
@@ -8,6 +8,6 @@
       ansible.builtin.git:
         repo: "https://github.com/Agata872/Quantize_aware_experiments.git"
         dest: "/home/pi/Quantize_aware_experiments"
-        version: "master"   # 如果默认是 main，就改成 "main"
+        version: "centralized-processing"
         update: true
         force: true
