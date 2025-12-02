@@ -178,6 +178,108 @@ def setup(usrp):
 #         tx_md.end_of_burst = True
 #         tx_streamer.send(np.zeros((num_channels, 0), dtype=np.complex64), tx_md)
 #         logger.info("TX finished.")
+def rx_ref(usrp, rx_streamer, quit_event, duration, result_queue, start_time=None):
+    # https://files.ettus.com/manual/page_sync.html#sync_phase_cordics
+    # The CORDICs are reset at each start-of-burst command, so users should ensure that every start-of-burst also has a time spec set.
+    logger.debug(f"GAIN IS CH0: {usrp.get_rx_gain(0)} CH1: {usrp.get_rx_gain(1)}")
+
+    global results
+    num_channels = rx_streamer.get_num_channels()
+    max_samps_per_packet = rx_streamer.get_max_num_samps()
+    buffer_length = int(duration * RATE * 2)
+    iq_data = np.empty((num_channels, buffer_length), dtype=np.complex64)
+
+    recv_buffer = np.zeros((num_channels, max_samps_per_packet), dtype=np.complex64)
+    rx_md = uhd.types.RXMetadata()
+    # Craft and send the Stream Command
+    stream_cmd = uhd.types.StreamCMD(uhd.types.StreamMode.start_cont)
+    # The stream now parameter controls when the stream begins. When true, the device will begin streaming ASAP. When false, the device will begin streaming at a time specified by time_spec.
+    stream_cmd.stream_now = False
+    timeout = 1.0
+    if start_time is not None:
+        stream_cmd.time_spec = start_time
+        time_diff = start_time.get_real_secs() - usrp.get_time_now().get_real_secs()
+        if time_diff > 0:
+            timeout = 1.0 + time_diff
+    else:
+        stream_cmd.time_spec = uhd.types.TimeSpec(
+            usrp.get_time_now().get_real_secs() + INIT_DELAY + 0.1
+        )
+    rx_streamer.issue_stream_cmd(stream_cmd)
+    try:
+        num_rx = 0
+        while not quit_event.is_set():
+            try:
+                num_rx_i = rx_streamer.recv(recv_buffer, rx_md, timeout)
+                if rx_md.error_code != uhd.types.RXMetadataErrorCode.none:
+                    logger.error(rx_md.error_code)
+                else:
+                    if num_rx_i > 0:
+                        # samples = recv_buffer[:,:num_rx_i]
+                        # send_rx(samples)
+                        samples = recv_buffer[:, :num_rx_i]
+                        if num_rx + num_rx_i > buffer_length:
+                            logger.error(
+                                "more samples received than buffer long, not storing the data"
+                            )
+                        else:
+                            iq_data[:, num_rx : num_rx + num_rx_i] = samples
+                            # threading.Thread(target=send_rx,
+                            #                  args=(samples,)).start()
+                            num_rx += num_rx_i
+            except RuntimeError as ex:
+                logger.error("Runtime error in receive: %s", ex)
+                return
+    except KeyboardInterrupt:
+        pass
+    finally:
+        logger.debug("CTRL+C is pressed or duration is reached, closing off ")
+        rx_streamer.issue_stream_cmd(
+            uhd.types.StreamCMD(uhd.types.StreamMode.stop_cont)
+        )
+        iq_samples = iq_data[:, int(RATE // 10) : num_rx]
+
+        np.save(file_name_state, iq_samples)
+
+        phase_ch0, freq_slope_ch0 = tools.get_phases_and_apply_bandpass(iq_samples[0, :])
+        phase_ch1, freq_slope_ch1 = tools.get_phases_and_apply_bandpass(iq_samples[1, :])
+
+        logger.debug("Frequency offset CH0: %.4f", freq_slope_ch0 / (2 * np.pi))
+        logger.debug("Frequency offset CH1: %.4f", freq_slope_ch1 / (2 * np.pi))
+
+        logger.debug("Phase offset CH0: %.4f", np.rad2deg(phase_ch0).mean())
+        logger.debug("Phase offset CH1: %.4f", np.rad2deg(phase_ch1).mean())
+
+        phase_diff = tools.to_min_pi_plus_pi(phase_ch0 - phase_ch1, deg=False)
+
+        # phase_diff = phase_ch0 - phase_ch1
+
+        _circ_mean = tools.circmean(phase_diff, deg=False)
+        _mean = np.mean(phase_diff)
+
+        logger.debug("Diff cirmean and mean: %.6f", _circ_mean - _mean)
+
+        result_queue.put(_mean)
+
+        avg_ampl = np.mean(np.abs(iq_samples), axis=1)
+        # var_ampl = np.var(np.abs(iq_samples), axis=1)
+
+        max_I = np.max(np.abs(np.real(iq_samples)), axis=1)
+        max_Q = np.max(np.abs(np.imag(iq_samples)), axis=1)
+
+        logger.debug(
+            "MAX AMPL IQ CH0: I %.6f Q %.6f CH1:I %.6f Q %.6f",
+            max_I[0],
+            max_Q[0],
+            max_I[1],
+            max_Q[1],
+        )
+
+        logger.debug(
+            "AVG AMPL IQ CH0: %.6f CH1: %.6f",
+            avg_ampl[0],
+            avg_ampl[1],
+        )
 
 def tx_ref(usrp, tx_streamer, quit_event, phase, amplitude, start_time=None):
     """
