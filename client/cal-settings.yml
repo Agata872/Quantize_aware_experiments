@@ -41,11 +41,11 @@ server_ip: "192.108.2.61"
 
 # Loopback
 START_LB: 5
-STOP_LB: 18
+STOP_LB: 10
 
 # PILOT
-START_Pilot: 25
-STOPT_Pilot_Tx: 20
+START_Pilot: 15
+STOPT_Pilot_Tx: 25
 STOP_Pilot: 35
 
 # BF
