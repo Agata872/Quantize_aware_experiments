@@ -120,64 +120,56 @@ def tune_usrp(usrp, freq, channels, at_time):
         time.sleep(0.01)
     logger.info("TX LO is locked")
 
-def setup(usrp):
+def setup(usrp, server_ip, connect=True):
     rate = RATE
     mcr = 20e6
-    assert (mcr / rate).is_integer(), f"The masterclock rate {mcr} should be an integer multiple of the sampling rate {rate}"
+    assert (
+        mcr / rate
+    ).is_integer(), f"The masterclock rate {mcr} should be an integer multiple of the sampling rate {rate}"
+    # Manual selection of master clock rate may also be required to synchronize multiple B200 units in time.
     usrp.set_master_clock_rate(mcr)
-    channels = [0,1]
+    channels = [0, 1]
     setup_clock(usrp, "external", usrp.get_num_mboards())
     setup_pps(usrp, "external")
+    # smallest as possible (https://files.ettus.com/manual/page_usrp_b200.html#b200_fe_bw)
     rx_bw = 200e3
     for chan in channels:
         usrp.set_rx_rate(rate, chan)
         usrp.set_tx_rate(rate, chan)
+        # NOTE DC offset is enabled
         usrp.set_rx_dc_offset(True, chan)
         usrp.set_rx_bandwidth(rx_bw, chan)
         usrp.set_rx_agc(False, chan)
-    # TX-side settings: use the specified TX channel (based on RX_TX_SAME_CHANNEL, signal is transmitted on FREE_TX_CH)
-    usrp.set_tx_gain(
-        PILOT_TX_GAIN, PILOT_TX_CH
-    )
+    # specific settings from loopback/REF PLL
+    usrp.set_tx_gain(LOOPBACK_TX_GAIN, LOOPBACK_TX_CH)
+    usrp.set_tx_gain(LOOPBACK_TX_GAIN, FREE_TX_CH)
 
+    usrp.set_rx_gain(LOOPBACK_RX_GAIN, LOOPBACK_RX_CH)
+    usrp.set_rx_gain(REF_RX_GAIN, REF_RX_CH)
+    # streaming arguments
     st_args = uhd.usrp.StreamArgs("fc32", "sc16")
     st_args.channels = channels
+    # streamers
     tx_streamer = usrp.get_tx_stream(st_args)
     rx_streamer = usrp.get_rx_stream(st_args)
-    tune_usrp(usrp, FREQ, channels, at_time=INIT_DELAY)
-    logger.info(f"USRP tuned and setup. (Current time: {usrp.get_time_now().get_real_secs()})")
+    # Step1: wait for the last pps time to transition to catch the edge
+    # Step2: set the time at the next pps (synchronous for all boards)
+    # this is better than set_time_next_pps as we wait till the next PPS to transition and after that we set the time.
+    # this ensures that the FPGA has enough time to clock in the new timespec (otherwise it could be too close to a PPS edge)
+    wait_till_go_from_server(server_ip, connect)
+    logger.info("Setting device timestamp to 0...")
+    usrp.set_time_unknown_pps(uhd.types.TimeSpec(0.0))
+    logger.debug("[SYNC] Resetting time.")
+    logger.info(f"RX GAIN PROFILE CH0: {usrp.get_rx_gain_names(0)}")
+    logger.info(f"RX GAIN PROFILE CH1: {usrp.get_rx_gain_names(1)}")
+    # we wait 2 seconds to ensure a PPS rising edge occurs and latches the 0.000s value to both USRPs.
+    time.sleep(2)
+    tune_usrp(usrp, FREQ, channels, at_time=begin_time)
+    logger.info(
+        f"USRP has been tuned and setup. ({usrp.get_time_now().get_real_secs()})"
+    )
     return tx_streamer, rx_streamer
 
-# -------------------------------
-# Transmission-related functions: tx_ref, tx_thread, tx_meta_thread
-# -------------------------------
-# def tx_ref(usrp, tx_streamer, quit_event, phase, amplitude, start_time):
-#     num_channels = tx_streamer.get_num_channels()
-#     max_samps_per_packet = tx_streamer.get_max_num_samps()
-#     amplitude = np.asarray(amplitude)
-#     phase = np.asarray(phase)
-#     sample = amplitude * np.exp(phase * 1j)
-#     transmit_buffer = np.ones((num_channels, 1000 * max_samps_per_packet), dtype=np.complex64)
-
-#     transmit_buffer[0, :] *= sample[0]
-#     if num_channels > 1:
-#         transmit_buffer[1, :] *= sample[1]
-#     tx_md = uhd.types.TXMetadata()
-#     if start_time is not None:
-#         tx_md.time_spec = start_time
-#     else:
-#         tx_md.time_spec = uhd.types.TimeSpec(usrp.get_time_now().get_real_secs() + INIT_DELAY)
-#     tx_md.has_time_spec = True
-#     logger.info("TX will start at time: %.6f", tx_md.time_spec.get_real_secs())
-#     try:
-#         while not quit_event.is_set():
-#             tx_streamer.send(transmit_buffer, tx_md)
-#     except KeyboardInterrupt:
-#         logger.debug("CTRL+C pressed in TX")
-#     finally:
-#         tx_md.end_of_burst = True
-#         tx_streamer.send(np.zeros((num_channels, 0), dtype=np.complex64), tx_md)
-#         logger.info("TX finished.")
 def rx_ref(usrp, rx_streamer, quit_event, duration, result_queue, start_time=None):
     # https://files.ettus.com/manual/page_sync.html#sync_phase_cordics
     # The CORDICs are reset at each start-of-burst command, so users should ensure that every start-of-burst also has a time spec set.
@@ -508,42 +500,48 @@ def measure_loopback(
 # Main function: run transmission task (after synchronization control)
 # -------------------------------
 def main():
+    global meas_id, file_name_state
+
+    parse_arguments()
+
     try:
-        # Initialize USRP device and load FPGA image
-        usrp = uhd.usrp.MultiUSRP("enable_user_regs, fpga=usrp_b210_fpga_loopback_ctrl.bin, mode_n=integer")
+        # Attempt to open and load calibration settings from the YAML file
+        with open(os.path.join(os.path.dirname(__file__), "cal-settings.yml"), "r") as file:
+            vars = yaml.safe_load(file)
+            globals().update(vars)  # update the global variables with the vars in yaml
+    except FileNotFoundError:
+        logger.error("Calibration file 'cal-settings.yml' not found in the current directory.")
+        exit()
+    except yaml.YAMLError as e:
+        logger.error(f"Error parsing 'cal-settings.yml': {e}")
+        exit()
+    except Exception as e:
+        logger.error(f"Unexpected error while loading calibration settings: {e}")
+        exit()
+
+    try:
+        # Get current path
+        script_dir = os.path.dirname(os.path.realpath(__file__))
+
+        # FPGA file path
+        fpga_path = os.path.join(script_dir, "usrp_b210_fpga_loopback.bin")
+
+        # Initialize USRP device with custom FPGA image and integer mode
+        usrp = uhd.usrp.MultiUSRP(
+            "enable_user_regs, " \
+            f"fpga={fpga_path}, " \
+            "mode_n=integer"
+        )
         logger.info("Using Device: %s", usrp.get_pp_string())
 
-        # =========================
-        # New: Communicate with sync server
-        # =========================
-        # Please modify the IP below to match your actual sync server IP
-        sync_context = zmq.Context()
-        # Create REQ socket to communicate with server's "alive" port (5558)
-        alive_client = sync_context.socket(zmq.REQ)
-        alive_client.connect(f"tcp://{server_ip}:5558")
-        alive_message = f"{HOSTNAME} TX alive"
-        logger.info("Sending alive message to sync server: %s", alive_message)
-        alive_client.send_string(alive_message)
-        reply = alive_client.recv_string()
-        logger.info("Received alive reply from sync server: %s", reply)
+        # -------------------------------------------------------------------------
+        # STEP 0: Preparations
+        # -------------------------------------------------------------------------
 
-        # Create SUB socket to listen to sync messages (port 5557)
-        sync_subscriber = sync_context.socket(zmq.SUB)
-        sync_subscriber.connect(f"tcp://{server_ip}:5557")
-        sync_subscriber.setsockopt_string(zmq.SUBSCRIBE, "")
-        logger.info("Waiting for SYNC message from sync server...")
-        sync_msg = sync_subscriber.recv_string()
-        logger.info("Received SYNC message: %s", sync_msg)
-
-        logger.info("Setting device timestamp to 0...")
-        usrp.set_time_unknown_pps(uhd.types.TimeSpec(0.0))
-        logger.debug("[SYNC] Resetting time.")
-        logger.info(f"RX GAIN PROFILE CH0: {usrp.get_rx_gain_names(0)}")
-        logger.info(f"RX GAIN PROFILE CH1: {usrp.get_rx_gain_names(1)}")
-        time.sleep(2)  # Wait for PPS rising edge
-
-        # Complete hardware setup, synchronization, tuning, and get TX and RX streamers
+        # Set up TX and RX streamers and establish connection
         tx_streamer, rx_streamer = setup(usrp, server_ip, connect=True)
+
+        # Event used to control thread termination
         quit_event = threading.Event()
 
         # -------------------------------------------------------------------------
@@ -567,7 +565,9 @@ def main():
         logger.info("Phase pilot reference signal in rad: %s", phi_LB)
         logger.info("Phase pilot reference signal in degrees: %s", np.rad2deg(phi_LB))
 
-        # =========================
+        # -------------------------------------------------------------------------
+        # STEP 1: Perform transmission of pilot signal
+        # -------------------------------------------------------------------------
 
         # After synchronization, schedule TX based on current time
 
