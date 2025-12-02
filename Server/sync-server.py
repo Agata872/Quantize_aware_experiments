@@ -18,6 +18,7 @@ import json              # NEW: for BF message
 import numpy as np       # NEW: for BF computation
 from datetime import datetime
 from helper import *
+from beamforming import compute_bf
 
 # =============================================================================
 #                           Experiment Configuration
@@ -158,15 +159,7 @@ with open(output_path, "w") as f:
 
                 print(f"[BF] Received CSI from {host}: phase shape={phase.shape}")
 
-                # MRT
-                h = np.exp(1j * phase)
-                bf = np.conj(h) / np.linalg.norm(h)
-
-                # 兼容标量/向量，统一取第一个元素
-                if np.isscalar(bf) or getattr(bf, "ndim", 0) == 0:
-                    bf0 = bf
-                else:
-                    bf0 = np.ravel(bf)[0]
+                bf0 = compute_bf(phase, method="mrt")
 
                 response_bytes = json.dumps({
                     "real": float(np.real(bf0)),
