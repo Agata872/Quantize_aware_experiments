@@ -5,7 +5,7 @@
 
   vars:
     python_path: "/usr/local/lib/python3.11/site-packages"
-    iterations: 20
+    iterations: 50
 
   tasks:
     - name: Ensure run_experiment.sh is executable
