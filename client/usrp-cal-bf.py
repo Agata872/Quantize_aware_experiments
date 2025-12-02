@@ -993,9 +993,7 @@ def main():
             usrp,
             tx_streamer,
             quit_event,
-            # phase_corr=phi_LB + phi_P + np.deg2rad(phi_cable),
-            # phase_corr=phi_LB - np.deg2rad(phi_cable) + np.deg2rad(phi_offset),
-            phase_corr=phi_LB - np.deg2rad(phi_cable) + PHI_CSI,
+            phase_corr=phase_corr,
             start_bf=START_BF, 
             long_time=False, # Set long_time True if you want to transmit longer than 10 seconds
         )

@@ -850,7 +850,7 @@ def main():
         # STEP 1: Perform internal loopback measurement with reference signal
         # -------------------------------------------------------------------------
         file_name_state = file_name + "_loopback"
-        
+
         logger.info("Scheduled LOOPBACK start time: %.6f", START_LB)
         measure_loopback(
             usrp,
@@ -884,12 +884,14 @@ def main():
 
         amplitudes = [0.0,0.0] 
         amplitudes[PILOT_TX_CH] = 0.8
-
+        phase_corr=phi_LB
+        logger.info("Phase correction in rad: %s", phase_corr)
+        logger.info("Phase correction in degrees: %s", np.rad2deg(phase_corr))   
         tx_thr = tx_thread(
             usrp,
             tx_streamer,
             quit_event,
-            phase_corr=phi_LB,
+            phase_corr=phase_corr,
             phase=[0.0, 0.0],
             amplitude=amplitudes,
             start_time=start_time_spec,
