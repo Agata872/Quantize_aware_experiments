@@ -948,29 +948,63 @@ def tx_qpsk_thread(
     thr.start()
     return thr
 
+def quantize_to_1bit(signal,
+                     dac_amp=0.8,
+                     add_dither=False,
+                     dither_amp=0.1):
+    """
+    模拟复基带信号经过 1-bit DAC:
+        y = sign(Re(x + dither)) + j * sign(Im(x + dither))
+        再统一缩放到 dac_amp 的幅度。
+
+    Args:
+        signal: complex64 ndarray, 预编码后的基带信号（任意形状）
+        dac_amp: 1-bit DAC 的满幅值，输出复数模值约为 dac_amp
+        add_dither: 是否在量化前加入 dither
+        dither_amp: dither 的幅度（均匀分布范围 [-dither_amp, dither_amp]）
+
+    Returns:
+        quantized: complex64 ndarray, 1-bit 量化后的信号
+    """
+    sig = signal.astype(np.complex64)
+
+    if add_dither:
+        # 复数均匀 dither
+        dither = (
+            np.random.uniform(-dither_amp, dither_amp, size=sig.shape)
+            + 1j * np.random.uniform(-dither_amp, dither_amp, size=sig.shape)
+        ).astype(np.complex64)
+        sig = sig + dither  # 先加 dither 再量化：precoding -> +dither -> Q_1bit
+
+    # 取符号：>0 -> +1, <0 -> -1, =0 先置 1 防止全零
+    re = np.sign(sig.real).astype(np.float32)
+    im = np.sign(sig.imag).astype(np.float32)
+    re[re == 0.0] = 1.0
+    im[im == 0.0] = 1.0
+
+    # 输出幅度统一到 dac_amp
+    norm = np.float32(np.sqrt(2.0))
+    quantized = (dac_amp / norm).astype(np.float32) * (re + 1j * im).astype(np.complex64)
+
+    return quantized.astype(np.complex64)
+
 def tx_qpsk_coh(usrp, tx_streamer, quit_event, phase_corr, start_bf, long_time=True):
     """
-    Transmit a coherent fixed QPSK signal with a given phase correction.
-
-    This mirrors the structure of tx_phase_coh(), but uses a QPSK waveform
-    instead of a constant complex tone.
+    Transmit a coherent QPSK waveform after applying precoding phase
+    and simulating a 1-bit DAC (optional dither).
     """
-    logger.debug("########### TX QPSK with adjusted phases ###########")
 
-    # 1) TX gain setting (same as in tx_phase_coh)
+    logger.debug("########### TX QPSK with adjusted phases (1-bit DAC) ###########")
+
     usrp.set_tx_gain(FREE_TX_GAIN, LOOPBACK_TX_CH)
 
-    # 2) Choose symbol rate and SPS (ensure RATE / symbol_rate is integer if possible)
-    symbol_rate = 25e3  # 25 kSym/s
+    # Symbol rate
+    symbol_rate = 25e3
     sps = int(RATE / symbol_rate)
-    if RATE % symbol_rate != 0:
-        logger.warning("RATE / symbol_rate is not an integer. Consider adjusting symbol_rate.")
 
-    # 3) Define a fixed QPSK symbol pattern
-    #    Here we repeat the cycle [0,1,2,3] many times
     symbols = [0, 1, 2, 3] * 2000
 
-    # 4) Generate the QPSK waveform with the beamforming phase correction
+    # Step 1: generate high-resolution QPSK symbols (precoded by phase_corr)
     qpsk_waveform = generate_fixed_qpsk_waveform(
         symbols=symbols,
         sps=sps,
@@ -978,37 +1012,41 @@ def tx_qpsk_coh(usrp, tx_streamer, quit_event, phase_corr, start_bf, long_time=T
         amplitude=0.8,
     )
 
-    # 5) Prepare UHD time spec for the start time
+    # Step 2: 1-bit DAC + optional dither
+    qpsk_waveform_1bit = quantize_to_1bit(
+        qpsk_waveform,
+        dac_amp=0.8,
+        add_dither=True,
+        dither_amp=0.1,
+    )
+
+    # UHD time alignment
     start_time = uhd.types.TimeSpec(start_bf)
 
-    # 6) Start TX and TX metadata threads
+    # TX thread with 1-bit waveform
     tx_thr = tx_qpsk_thread(
         usrp,
         tx_streamer,
         quit_event,
-        qpsk_waveform=qpsk_waveform,
+        qpsk_waveform=qpsk_waveform_1bit,
         start_time=start_time,
     )
 
     tx_meta_thr = tx_meta_thread(tx_streamer, quit_event)
 
-    # 7) Notify the server that the USRP is now in TX mode
     send_usrp_in_tx_mode(server_ip)
 
-    # 8) Keep transmitting for the desired duration
+    # TX duration
     if long_time and "TX_TIME" in globals():
         time.sleep(TX_TIME + delta(usrp, start_bf))
     else:
         time.sleep(10.0 + delta(usrp, start_bf))
 
-    # 9) Stop threads and clean up
     quit_event.set()
     tx_thr.join()
     tx_meta_thr.join()
 
-    logger.debug("QPSK transmission completed successfully")
-
-    return tx_thr, tx_meta_thr
+    logger.debug("QPSK (1-bit DAC) transmission completed successfully")
 
 
 def main():
