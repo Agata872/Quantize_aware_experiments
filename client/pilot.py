@@ -876,7 +876,7 @@ def main():
         # After synchronization, schedule TX based on current time
 
         # A short delay (e.g., 0.2s) can be added to ensure TX starts after config
-        start_time_spec = uhd.types.TimeSpec(START_Pilot)
+        start_time_spec = uhd.types.TimeSpec(START_Pilot) - 1
         logger.info("Scheduled TX start time: %.6f", START_Pilot)
         # Start TX thread with amplitude=1.0, phase=0.0 (both channels)
 

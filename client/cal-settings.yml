@@ -46,7 +46,7 @@ STOP_LB: 10
 # PILOT
 START_Pilot: 15
 STOPT_Pilot_Tx: 25
-STOP_Pilot: 35
+STOP_Pilot: 32
 
 # BF
 START_BF: 45
