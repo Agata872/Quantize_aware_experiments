@@ -841,6 +841,176 @@ def get_BF(ip, phase):
 
     return result
 
+def generate_fixed_qpsk_waveform(symbols, sps, phase_offset=0.0, amplitude=0.8):
+    """
+    Generate a QPSK baseband waveform from a given symbol sequence.
+
+    Args:
+        symbols: List or array of integers in {0,1,2,3}, indicating QPSK symbols.
+                 Fixed mapping:
+                     0 →  1 + j
+                     1 → -1 + j
+                     2 → -1 - j
+                     3 →  1 - j
+        sps: Samples per symbol.
+        phase_offset: Global phase rotation (radians).
+        amplitude: Output amplitude.
+
+    Returns:
+        waveform: complex64 array containing the upsampled QPSK baseband signal.
+    """
+    # Fixed QPSK mapping
+    mapping = np.array([
+        1 + 1j,   # symbol 0
+        -1 + 1j,  # symbol 1
+        -1 - 1j,  # symbol 2
+        1 - 1j    # symbol 3
+    ], dtype=np.complex64)
+
+    # Map integer symbols to complex constellation points
+    base_symbols = mapping[np.array(symbols)]
+
+    # Normalize to unit power
+    base_symbols /= np.sqrt(2.0).astype(np.float32)
+
+    # Apply amplitude scaling
+    base_symbols *= amplitude
+
+    # Apply global phase rotation
+    base_symbols *= np.exp(1j * phase_offset).astype(np.complex64)
+
+    # Upsample: repeat each symbol SPS times
+    waveform = np.repeat(base_symbols, sps)
+
+    return waveform
+
+
+def tx_qpsk(
+    usrp,
+    tx_streamer,
+    quit_event,
+    qpsk_waveform,
+    start_time=None,
+):
+    """
+    Transmit a given QPSK baseband waveform on LOOPBACK_TX_CH.
+    Other TX channels remain silent.
+    """
+    num_channels = tx_streamer.get_num_channels()
+    max_samps_per_packet = tx_streamer.get_max_num_samps()
+
+    buf_len = 1000 * max_samps_per_packet
+    tx_buffer = np.zeros((num_channels, buf_len), dtype=np.complex64)
+
+    wf = qpsk_waveform.astype(np.complex64)
+    wf_len = len(wf)
+
+    # Fill the active TX channel with the QPSK waveform (looped)
+    for i in range(buf_len):
+        tx_buffer[LOOPBACK_TX_CH, i] = wf[i % wf_len]
+
+    tx_md = uhd.types.TXMetadata()
+
+    if start_time is not None:
+        if isinstance(start_time, (int, float)):
+            start_time = uhd.types.TimeSpec(float(start_time))
+        tx_md.time_spec = start_time
+    else:
+        tx_md.time_spec = uhd.types.TimeSpec(
+            usrp.get_time_now().get_real_secs() + INIT_DELAY
+        )
+
+    tx_md.has_time_spec = True
+
+    try:
+        while not quit_event.is_set():
+            tx_streamer.send(tx_buffer, tx_md)
+            tx_md.has_time_spec = False
+    except KeyboardInterrupt:
+        logger.debug("CTRL+C detected — stopping QPSK transmission")
+    finally:
+        tx_md.end_of_burst = True
+        tx_streamer.send(np.zeros((num_channels, 0), dtype=np.complex64), tx_md)
+
+
+def tx_qpsk_thread(
+    usrp,
+    tx_streamer,
+    quit_event,
+    qpsk_waveform,
+    start_time=None,
+):
+    thr = threading.Thread(
+        target=tx_qpsk,
+        args=(usrp, tx_streamer, quit_event, qpsk_waveform, start_time),
+    )
+    thr.name = "TX_QPSK_thread"
+    thr.start()
+    return thr
+
+def tx_qpsk_coh(usrp, tx_streamer, quit_event, phase_corr, start_bf, long_time=True):
+    """
+    Transmit a coherent fixed QPSK signal with a given phase correction.
+
+    This mirrors the structure of tx_phase_coh(), but uses a QPSK waveform
+    instead of a constant complex tone.
+    """
+    logger.debug("########### TX QPSK with adjusted phases ###########")
+
+    # 1) TX gain setting (same as in tx_phase_coh)
+    usrp.set_tx_gain(FREE_TX_GAIN, LOOPBACK_TX_CH)
+
+    # 2) Choose symbol rate and SPS (ensure RATE / symbol_rate is integer if possible)
+    symbol_rate = 25e3  # 25 kSym/s
+    sps = int(RATE / symbol_rate)
+    if RATE % symbol_rate != 0:
+        logger.warning("RATE / symbol_rate is not an integer. Consider adjusting symbol_rate.")
+
+    # 3) Define a fixed QPSK symbol pattern
+    #    Here we repeat the cycle [0,1,2,3] many times
+    symbols = [0, 1, 2, 3] * 2000
+
+    # 4) Generate the QPSK waveform with the beamforming phase correction
+    qpsk_waveform = generate_fixed_qpsk_waveform(
+        symbols=symbols,
+        sps=sps,
+        phase_offset=phase_corr,
+        amplitude=0.8,
+    )
+
+    # 5) Prepare UHD time spec for the start time
+    start_time = uhd.types.TimeSpec(start_bf)
+
+    # 6) Start TX and TX metadata threads
+    tx_thr = tx_qpsk_thread(
+        usrp,
+        tx_streamer,
+        quit_event,
+        qpsk_waveform=qpsk_waveform,
+        start_time=start_time,
+    )
+
+    tx_meta_thr = tx_meta_thread(tx_streamer, quit_event)
+
+    # 7) Notify the server that the USRP is now in TX mode
+    send_usrp_in_tx_mode(server_ip)
+
+    # 8) Keep transmitting for the desired duration
+    if long_time and "TX_TIME" in globals():
+        time.sleep(TX_TIME + delta(usrp, start_bf))
+    else:
+        time.sleep(10.0 + delta(usrp, start_bf))
+
+    # 9) Stop threads and clean up
+    quit_event.set()
+    tx_thr.join()
+    tx_meta_thr.join()
+
+    logger.debug("QPSK transmission completed successfully")
+
+    return tx_thr, tx_meta_thr
+
+
 def main():
     global meas_id, file_name_state
 
