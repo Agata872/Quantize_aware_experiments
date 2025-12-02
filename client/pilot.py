@@ -496,6 +496,38 @@ def measure_loopback(
     # ------------------------------------------------------------
     quit_event.clear()
 
+def parse_arguments():
+    """
+    Parse command-line arguments for the beamforming (BF) application.
+
+    This function checks for the optional server IP argument (-i or --ip)
+    and updates the global variable `server_ip` if provided.
+
+    Example:
+        python script.py -i 192.168.1.10
+    """
+    global server_ip
+
+    # Create an argument parser with a brief description
+    parser = argparse.ArgumentParser(description="Beamforming control script")
+
+    # Optional argument for specifying the server IP
+    parser.add_argument(
+        "-i",
+        "--ip",
+        type=str,
+        help="IP address of the server (optional)",
+        required=False,
+    )
+
+    # Parse the command-line arguments
+    args = parser.parse_args()
+
+    # If the user provided an IP address, apply it
+    if args.ip:
+        logger.debug(f"Setting server IP to: {args.ip}")
+        server_ip = args.ip
+
 # -------------------------------
 # Main function: run transmission task (after synchronization control)
 # -------------------------------
