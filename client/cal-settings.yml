@@ -52,7 +52,7 @@ STOP_Pilot: 30
 START_BF: 37
 
 # Gain setups
-PILOT_TX_GAIN: 88
+PILOT_TX_GAIN: 44
 
 # Pilot USRP
 PILOT_TX_CH1: 0
