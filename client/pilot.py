@@ -27,6 +27,8 @@ CLOCK_TIMEOUT = 1000      # Timeout for external clock locking (in ms)
 INIT_DELAY = 0.2          # Initial delay before starting transmission (200 ms)
 RATE = 250e3              # Sampling rate in samples per second (250 kSps)
 LOOPBACK_TX_GAIN = 50 #70     # Empirically determined transmit gain for loopback tests
+PILOT_TX_GAIN = 77        # Empirically determined transmit gain for pilot tests
+PILOT_TX_CH = 0            # Transmit channel for pilot signal
 RX_GAIN = 22              # Empirically determined receive gain (22 dB without splitter, 27 dB with splitter)
 CAPTURE_TIME = 10         # Duration of each capture in seconds
 FREQ = 0                  # Base frequency offset (Hz); 0 means use default center frequency
@@ -881,7 +883,7 @@ def main():
         # Start TX thread with amplitude=1.0, phase=0.0 (both channels)
 
         usrp.set_tx_antenna(PILOT_TX_ANT, PILOT_TX_CH)
-
+        usrp.set_tx_gain(PILOT_TX_GAIN, PILOT_TX_CH)
         amplitudes = [0.0,0.0] 
         amplitudes[PILOT_TX_CH] = 0.8
         phase_corr=phi_LB
