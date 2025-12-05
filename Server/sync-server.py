@@ -72,11 +72,18 @@ meas_id = 0
 # Unique ID for the experiment based on current UTC timestamp
 unique_id = str(datetime.utcnow().strftime("%Y%m%d%H%M%S"))
 
+# Poller for READY / TXMODE messages
+poller = zmq.Poller()
+poller.register(alive_socket, zmq.POLLIN)
+
+# BF CSI
 bf_poller = zmq.Poller()
 bf_poller.register(bf_socket, zmq.POLLIN)
 
+# DL results (from Rx.py)
 results_poller = zmq.Poller()
 results_poller.register(results_socket, zmq.POLLIN)
+
 
 new_msg_received = 0
 WAIT_TIMEOUT = 60.0 * 10.0  # 10 minutes
