@@ -1016,7 +1016,7 @@ def tx_qpsk_coh(usrp, tx_streamer, quit_event, phase_corr, start_bf, long_time=T
     qpsk_waveform_1bit = quantize_to_1bit(
         qpsk_waveform,
         dac_amp=0.8,
-        add_dither=True,
+        add_dither=False,
         dither_amp=0.1,
     )
 
