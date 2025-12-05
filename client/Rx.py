@@ -34,6 +34,12 @@ FREQ = 0                  # Base frequency offset (Hz); 0 means use default cent
 # server_ip = "10.128.52.53"  # Optional remote server address (commented out)
 meas_id = 0               # Measurement identifier
 exp_id = 0                # Experiment identifier
+# ---------------- QPSK & frame parameters for downlink ----------------
+SYMBOL_RATE = 25e3                 # 必须和 Tx.py 里的保持一致
+SPS = int(RATE / SYMBOL_RATE)      # samples per symbol
+NUM_DATA_SYMS = 4096               # 和 Tx.py 里的 NUM_DATA_SYMS 一致
+DATA_SEED = 1234                   # 和 Tx.py 里 rng 的 seed 一致
+# ---------------------------------------------------------------------
 # =============================================================================
 # =============================================================================
 
@@ -691,6 +697,23 @@ def measure_loopback(
     # ------------------------------------------------------------
     quit_event.clear()
 
+def qpsk_mapping(symbols):
+    """
+    将 {0,1,2,3} 映射为 QPSK 星座点 (unit power)：
+        0 ->  1 + j
+        1 -> -1 + j
+        2 -> -1 - j
+        3 ->  1 - j
+    """
+    mapping = np.array([
+        1 + 1j,
+        -1 + 1j,
+        -1 - 1j,
+        1 - 1j,
+    ], dtype=np.complex64)
+    const = mapping[np.asarray(symbols)]
+    const /= np.sqrt(2.0).astype(np.float32)
+    return const.astype(np.complex64)
 
 
 def tx_phase_coh(usrp, tx_streamer, quit_event, phase_corr, start_bf, long_time=True):
@@ -796,6 +819,131 @@ def parse_arguments():
     if args.ip:
         logger.debug(f"Setting server IP to: {args.ip}")
         server_ip = args.ip
+
+def rx_downlink(usrp, rx_streamer, quit_event, duration, start_time=None):
+    """
+    接收下行 QPSK（从 Tx.py 发出的那一段），返回 IQ samples。
+    和 rx_ref 类似，但不做相位估计，只保存数据 + 返回。
+    """
+    num_channels = rx_streamer.get_num_channels()
+    max_samps_per_packet = rx_streamer.get_max_num_samps()
+    buffer_length = int(duration * RATE * 2)
+
+    iq_data = np.empty((num_channels, buffer_length), dtype=np.complex64)
+    recv_buffer = np.zeros((num_channels, max_samps_per_packet), dtype=np.complex64)
+    rx_md = uhd.types.RXMetadata()
+
+    stream_cmd = uhd.types.StreamCMD(uhd.types.StreamMode.start_cont)
+    stream_cmd.stream_now = False
+    timeout = 1.0
+
+    if start_time is not None:
+        stream_cmd.time_spec = start_time
+        time_diff = start_time.get_real_secs() - usrp.get_time_now().get_real_secs()
+        if time_diff > 0:
+            timeout = 1.0 + time_diff
+    else:
+        stream_cmd.time_spec = uhd.types.TimeSpec(
+            usrp.get_time_now().get_real_secs() + INIT_DELAY + 0.1
+        )
+
+    logger.debug("Issuing DL RX stream cmd at t=%.6f", stream_cmd.time_spec.get_real_secs())
+    rx_streamer.issue_stream_cmd(stream_cmd)
+
+    num_rx = 0
+    try:
+        while not quit_event.is_set():
+            try:
+                num_rx_i = rx_streamer.recv(recv_buffer, rx_md, timeout)
+                if rx_md.error_code != uhd.types.RXMetadataErrorCode.none:
+                    logger.error("DL RX error: %s", rx_md.error_code)
+                else:
+                    if num_rx_i > 0:
+                        if num_rx + num_rx_i > buffer_length:
+                            logger.error("DL RX: buffer overflow, stopping store")
+                            break
+                        iq_data[:, num_rx:num_rx + num_rx_i] = recv_buffer[:, :num_rx_i]
+                        num_rx += num_rx_i
+            except RuntimeError as ex:
+                logger.error("Runtime error in DL receive: %s", ex)
+                break
+    finally:
+        logger.debug("Stopping DL RX streaming")
+        rx_streamer.issue_stream_cmd(uhd.types.StreamCMD(uhd.types.StreamMode.stop_cont))
+
+    iq_samples = iq_data[:, :num_rx]
+    return iq_samples
+
+def process_downlink_qpsk(iq_samples):
+    """
+    使用接收的下行 IQ，结合已知 QPSK 符号序列，估计有效 SNR 和 achievable rate。
+    这里假设：
+      - 下行数据在某个 RX 通道（例如 LOOPBACK_RX_CH）上接收；
+      - Tx.py 使用 DATA_SEED 和 NUM_DATA_SYMS 生成同一串 data symbols。
+    """
+    # 1) 选择接收通道：这里用 LOOPBACK_RX_CH，
+    #    如果你的同轴接在别的通道，可以改成 PILOT_RX_CH 或 REF_RX_CH
+    rx_ch = LOOPBACK_RX_CH
+    rx_bb = iq_samples[rx_ch, :]
+
+    if rx_bb.size == 0:
+        logger.error("No DL IQ samples received.")
+        return
+
+    # 2) 去掉开头一小段过渡（如 0.1s），避免启动瞬态
+    start_idx = int(RATE // 10)
+    if start_idx >= rx_bb.size:
+        start_idx = 0
+    rx_bb = rx_bb[start_idx:]
+
+    # 3) 只取前 NUM_DATA_SYMS * SPS 个采样用于分析
+    total_needed = NUM_DATA_SYMS * SPS
+    if rx_bb.size < total_needed:
+        logger.warning(
+            "DL IQ samples (%d) less than needed (%d), truncating NUM_DATA_SYMS accordingly.",
+            rx_bb.size, total_needed
+        )
+        # 调整符号数，保证整除
+        total_syms = rx_bb.size // SPS
+    else:
+        total_syms = NUM_DATA_SYMS
+
+    N = total_syms * SPS
+    rx_bb = rx_bb[:N]
+
+    # 4) 按 SPS 抽取得到符号
+    rx_syms = rx_bb[::SPS]
+
+    # 5) 构造 Tx 端发出的理想 QPSK 符号序列（必须和 Tx.py 一致）
+    rng = np.random.default_rng(seed=DATA_SEED)
+    data_symbols = rng.integers(low=0, high=4, size=total_syms)
+    s_tx = qpsk_mapping(data_symbols)
+
+    # 6) 估计等效线性信道 h_hat，并做均衡
+    #    这里的“信道” includes: 模拟信道 + 1-bit/N-bit 量化非线性在 LS 意义下的最佳线性逼近
+    h_hat = np.mean(rx_syms / s_tx)
+    logger.info("Estimated effective channel h_hat = %.4f + j%.4f",
+                h_hat.real, h_hat.imag)
+
+    y_eq = rx_syms / h_hat
+
+    # 7) 计算 effective SNR & achievable rate
+    Es = np.mean(np.abs(s_tx) ** 2)            # 一般 QPSK ≈ 1
+    err = y_eq - s_tx                          # 把所有失真/噪声都看成等效噪声
+    N0_eff = np.mean(np.abs(err) ** 2)
+
+    gamma_eff = Es / (N0_eff + 1e-12)
+    snr_db = 10.0 * np.log10(gamma_eff + 1e-12)
+    R = np.log2(1.0 + gamma_eff)
+
+    logger.info("Effective SNR (linear): %.4f", gamma_eff)
+    logger.info("Effective SNR (dB): %.2f dB", snr_db)
+    logger.info("Achievable rate (single-user, bits/s/Hz): %.3f", R)
+
+    # 你如果想后处理或画图，也可以保存中间结果：
+    # np.save("dl_rx_syms.npy", rx_syms)
+    # np.save("dl_y_eq.npy", y_eq)
+    # np.save("dl_s_tx.npy", s_tx)
 
 # -------------------------------
 # Main function: run transmission task (after synchronization control)
@@ -908,11 +1056,41 @@ def main():
         tx_meta_thr.join()
 
         logger.info("TX script finished successfully.")
+        # =========================================================
+        # STEP 2: Receive downlink QPSK from Tx.py and process it
+        # =========================================================
+
+        # 清理 quit_event，为 RX 做准备
+        quit_event.clear()
+
+        try:
+            usrp.set_rx_antenna(PILOT_RX_ANT, PILOT_TX_CH)
+        except Exception as e:
+            logger.warning("Could not set RX antenna via PILOT_RX_ANT: %s", e)
+        usrp.set_rx_gain(RX_GAIN, rx_ch)
+
+        # 计划在 START_BF 开始接收下行
+        dl_duration = CAPTURE_TIME   # 接收时长，可按需要调整
+        start_time_dl = uhd.types.TimeSpec(START_BF)
+        logger.info("Scheduled DL RX start time: %.6f", START_BF)
+        logger.info("Current USRP time: %.6f", usrp.get_time_now().get_real_secs())
+        logger.info("We will capture %.2f seconds of DL IQ.", dl_duration)
+
+        iq_dl = rx_downlink(
+            usrp=usrp,
+            rx_streamer=rx_streamer,
+            quit_event=quit_event,
+            duration=dl_duration,
+            start_time=start_time_dl,
+        )
+
+        logger.info("Downlink IQ capture finished, starting baseband processing...")
+        process_downlink_qpsk(iq_dl)
+
     except Exception as e:
-        logger.error("Error encountered in TX script: %s", e)
+        logger.error("Error encountered in RX script: %s", e)
         sys.exit(1)
     finally:
-        time.sleep(START_BF + 10 - get_current_time(usrp))
         sys.exit(0)
 
 if __name__ == "__main__":
