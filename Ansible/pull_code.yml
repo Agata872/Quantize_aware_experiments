@@ -8,6 +8,6 @@
       ansible.builtin.git:
         repo: "https://github.com/Agata872/Quantize_aware_experiments.git"
         dest: "/home/pi/Quantize_aware_experiments"
-        version: "1"
+        version: "QPSK-waveform-quantize"
         update: true
         force: true
