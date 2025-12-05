@@ -1116,7 +1116,7 @@ def main():
         quit_event.clear()
 
         try:
-            usrp.set_rx_antenna(PILOT_RX_ANT, PILOT_TX_CH)
+            usrp.set_rx_antenna(PILOT_TX_ANT1, PILOT_TX_CH1)
         except Exception as e:
             logger.warning("Could not set RX antenna via PILOT_RX_ANT: %s", e)
         usrp.set_rx_gain(RX_GAIN, rx_ch)
