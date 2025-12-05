@@ -1282,14 +1282,24 @@ def main():
 
         logger.info("Scheduled downlink start time: %.6f", START_BF)
 
-        tx_qpsk_coh(
-            usrp,
-            tx_streamer,
-            quit_event,
-            phase_corr=phase_corr,
-            start_bf=START_BF,
-            long_time=False,  # same semantic as original tx_phase_coh
-        )
+        # tx_qpsk_coh(
+        #     usrp,
+        #     tx_streamer,
+        #     quit_event,
+        #     phase_corr=phase_corr,
+        #     start_bf=START_BF,
+        #     long_time=False,  # same semantic as original tx_phase_coh
+        # )
+
+        tx_tone_1bit_coh(
+             usrp,
+             tx_streamer,
+             quit_event,
+             phase_corr=phase_corr,
+             start_bf=START_BF,
+             long_time=False,
+             tone_freq=25e3,   # 可以换 50e3、75e3 等
+         )
 
         print("DONE")
 
