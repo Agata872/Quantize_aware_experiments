@@ -884,6 +884,28 @@ def generate_fixed_qpsk_waveform(symbols, sps, phase_offset=0.0, amplitude=0.8):
 
     return waveform
 
+def generate_tone_waveform(
+    tone_freq=25e3,
+    num_periods=200,
+    phase_offset=0.0,
+    amplitude=0.8,
+):
+    """
+    生成复基带单音：
+        x[n] = amplitude * exp(j*(2*pi*f_tone/RATE*n + phase_offset))
+
+    tone_freq: 基带音频 (Hz)，必须 < RATE/2
+    num_periods: buffer 中包含的周期数（后面会循环发送）
+    """
+    samples_per_period = int(RATE / tone_freq)
+    n = np.arange(samples_per_period * num_periods, dtype=np.int64)
+
+    waveform = amplitude * np.exp(
+        1j * ((2 * np.pi * tone_freq / RATE) * n + phase_offset)
+    )
+
+    return waveform.astype(np.complex64)
+
 
 def tx_qpsk(
     usrp,
@@ -999,7 +1021,7 @@ def tx_qpsk_coh(usrp, tx_streamer, quit_event, phase_corr, start_bf, long_time=T
     usrp.set_tx_gain(FREE_TX_GAIN, LOOPBACK_TX_CH)
 
     # Symbol rate
-    symbol_rate = 250e3
+    symbol_rate = 25e3
     sps = int(RATE / symbol_rate)
 
     symbols = [0, 1, 2, 3] * 2000
@@ -1047,6 +1069,68 @@ def tx_qpsk_coh(usrp, tx_streamer, quit_event, phase_corr, start_bf, long_time=T
     tx_meta_thr.join()
 
     logger.debug("QPSK (1-bit DAC) transmission completed successfully")
+
+def tx_tone_1bit_coh(
+    usrp,
+    tx_streamer,
+    quit_event,
+    phase_corr,
+    start_bf,
+    long_time=True,
+    tone_freq=25e3,
+):
+    """
+    用单音正弦 + 1-bit DAC（可选 dither）做下行发射，
+    用于在示波器上观察 1-bit 量化失真。
+    """
+
+    logger.debug("########### TX TONE with adjusted phases (1-bit DAC) ###########")
+
+    # 设置 TX 增益
+    usrp.set_tx_gain(FREE_TX_GAIN, LOOPBACK_TX_CH)
+
+    # Step 1: 生成带相位校正的基带单音
+    tone_waveform = generate_tone_waveform(
+        tone_freq=tone_freq,
+        num_periods=200,
+        phase_offset=phase_corr,
+        amplitude=0.8,
+    )
+
+    # Step 2: 1-bit 量化（先关 dither，看“干净”谐波）
+    tone_waveform_1bit = quantize_to_1bit(
+        tone_waveform,
+        dac_amp=0.8,
+        add_dither=False,   # 后面可以改 True 对比
+        dither_amp=0.1,
+    )
+
+    # UHD 时间对齐
+    start_time = uhd.types.TimeSpec(start_bf)
+
+    # Step 3: 用 tx_qpsk_thread 循环发这段波形
+    tx_thr = tx_qpsk_thread(
+        usrp,
+        tx_streamer,
+        quit_event,
+        qpsk_waveform=tone_waveform_1bit,  # 虽然叫 qpsk_waveform，其实是任意波形
+        start_time=start_time,
+    )
+
+    tx_meta_thr = tx_meta_thread(tx_streamer, quit_event)
+
+    send_usrp_in_tx_mode(server_ip)
+
+    if long_time and "TX_TIME" in globals():
+        time.sleep(TX_TIME + delta(usrp, start_bf))
+    else:
+        time.sleep(10.0 + delta(usrp, start_bf))
+
+    quit_event.set()
+    tx_thr.join()
+    tx_meta_thr.join()
+
+    logger.debug("TONE (1-bit DAC) transmission completed successfully")
 
 
 def main():
