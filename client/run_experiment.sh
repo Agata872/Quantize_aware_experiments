@@ -10,9 +10,9 @@ fi
 echo "Running one iteration as role: $ROLE"
 
 if [[ "$ROLE" == "pilot" ]]; then
-    python3 pilot.py
+    python3 Tx.py
 elif [[ "$ROLE" == "usrp" ]]; then
-    python3 usrp-cal-bf.py
+    python3 Rx.py
 else
     echo "Unknown ROLE '$ROLE'. Expected: pilot or usrp"
     exit 1

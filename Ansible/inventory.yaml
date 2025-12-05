@@ -853,12 +853,12 @@ all:
           experiment_role: "pilot"
         T05:
           experiment_role: "usrp"
-        T06:
-          experiment_role: "usrp"
-        T07:
-          experiment_role: "usrp"
-        T08:
-          experiment_role: "usrp"
+        # T06:
+        #   experiment_role: "usrp"
+        # T07:
+        #   experiment_role: "usrp"
+        # T08:
+        #   experiment_role: "usrp"
     All:
       hosts:
         A05:
