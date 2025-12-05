@@ -999,7 +999,7 @@ def tx_qpsk_coh(usrp, tx_streamer, quit_event, phase_corr, start_bf, long_time=T
     usrp.set_tx_gain(FREE_TX_GAIN, LOOPBACK_TX_CH)
 
     # Symbol rate
-    symbol_rate = 25e3
+    symbol_rate = 250e3
     sps = int(RATE / symbol_rate)
 
     symbols = [0, 1, 2, 3] * 2000
