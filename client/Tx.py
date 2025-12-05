@@ -33,6 +33,11 @@ FREQ = 0                  # Base frequency offset (Hz); 0 means use default cent
 # server_ip = "10.128.52.53"  # Optional remote server address (commented out)
 meas_id = 0               # Measurement identifier
 exp_id = 0                # Experiment identifier
+# QPSK / 波形配置
+SYMBOL_RATE = 25e3          # 符号率
+SPS = int(RATE / SYMBOL_RATE)  # samples per symbol
+NUM_DATA_SYMS = 4096        # 每帧数据符号数
+NUM_PILOT_SYMS = 256        # 如果后面想用前导 pilot 做帧同步，可先预留
 # =============================================================================
 # =============================================================================
 
@@ -690,6 +695,94 @@ def measure_loopback(
     # ------------------------------------------------------------
     quit_event.clear()
 
+def qpsk_mapping(symbols):
+    """
+    将 {0,1,2,3} 映射为 QPSK 星座点 (unit power)：
+        0 ->  1 + j
+        1 -> -1 + j
+        2 -> -1 - j
+        3 ->  1 - j
+    """
+    mapping = np.array([
+        1 + 1j,
+        -1 + 1j,
+        -1 - 1j,
+        1 - 1j,
+    ], dtype=np.complex64)
+    const = mapping[np.asarray(symbols)]
+    const /= np.sqrt(2.0).astype(np.float32)
+    return const.astype(np.complex64)
+
+
+def generate_qpsk_waveform(symbols, sps, phase_offset=0.0, amplitude=0.8):
+    """
+    从符号序列生成上采样后的 QPSK 基带波形。
+    """
+    const = qpsk_mapping(symbols)
+    const *= amplitude
+    const *= np.exp(1j * phase_offset).astype(np.complex64)
+    waveform = np.repeat(const, sps)
+    return waveform.astype(np.complex64)
+
+def quantize_complex_uniform(x, bits=None, full_scale=0.8, add_dither=False, dither_amp=0.1):
+    """
+    对复基带信号进行对称均匀量化：
+        - bits is None or 0: 不量化，直接按 full_scale 归一
+        - bits == 1: 相当于 sign 量化（1-bit DAC）
+        - bits > 1: 将实部/虚部裁剪到 [-1,1]，再均匀量化到 2^bits 个电平
+
+    Args:
+        x: complex64 ndarray，待量化基带
+        bits: 量化位数
+        full_scale: 量化后幅度大致范围（类似 DAC 满量程）
+        add_dither: 是否加入随机 dither
+        dither_amp: dither 幅度
+
+    Returns:
+        qx: complex64 ndarray, 量化后的信号
+    """
+    sig = x.astype(np.complex64)
+
+    if bits is None or bits == 0:
+        # 只做幅度归一，视为“全分辨率”
+        max_abs = np.max(np.abs(sig)) + 1e-6
+        sig = sig / max_abs * full_scale
+        return sig.astype(np.complex64)
+
+    if add_dither:
+        dither = (
+            np.random.uniform(-dither_amp, dither_amp, size=sig.shape)
+            + 1j * np.random.uniform(-dither_amp, dither_amp, size=sig.shape)
+        ).astype(np.complex64)
+        sig = sig + dither
+
+    if bits == 1:
+        # 1-bit: sign 量化
+        re = np.sign(sig.real).astype(np.float32)
+        im = np.sign(sig.imag).astype(np.float32)
+        re[re == 0.0] = 1.0
+        im[im == 0.0] = 1.0
+
+        norm = np.float32(np.sqrt(2.0))
+        qx = (full_scale / norm).astype(np.float32) * (re + 1j * im).astype(np.complex64)
+        return qx.astype(np.complex64)
+
+    # N-bit (N>1) 均匀量化
+    # 1) 先裁剪到 [-1, 1]
+    re = np.clip(sig.real / full_scale, -1.0, 1.0)
+    im = np.clip(sig.imag / full_scale, -1.0, 1.0)
+
+    # 2) 线性映射到 [0, 2^bits - 1] 的索引
+    levels = 2 ** bits
+    re_idx = np.round((re + 1.0) * (levels - 1) / 2.0)
+    im_idx = np.round((im + 1.0) * (levels - 1) / 2.0)
+
+    # 3) 再映回 [-1, 1]
+    re_q = (re_idx * 2.0 / (levels - 1)) - 1.0
+    im_q = (im_idx * 2.0 / (levels - 1)) - 1.0
+
+    qx = full_scale * (re_q + 1j * im_q).astype(np.complex64)
+    return qx.astype(np.complex64)
 
 
 def tx_phase_coh(usrp, tx_streamer, quit_event, phase_corr, start_bf, long_time=True):
@@ -762,6 +855,144 @@ def tx_phase_coh(usrp, tx_streamer, quit_event, phase_corr, start_bf, long_time=
     logger.debug("Transmission completed successfully")
 
     return tx_thr, tx_meta_thr
+
+def tx_waveform_once(
+    usrp,
+    tx_streamer,
+    quit_event,
+    waveform,
+    active_tx_ch,
+    start_time=None,
+):
+    """
+    在指定 TX 通道上连续发送给定基带波形（循环填充 buffer）。
+
+    waveform: 1D complex64 ndarray
+    """
+    num_channels = tx_streamer.get_num_channels()
+    max_samps_per_packet = tx_streamer.get_max_num_samps()
+
+    buf_len = 1000 * max_samps_per_packet
+    tx_buffer = np.zeros((num_channels, buf_len), dtype=np.complex64)
+
+    wf = waveform.astype(np.complex64)
+    wf_len = len(wf)
+
+    for i in range(buf_len):
+        tx_buffer[active_tx_ch, i] = wf[i % wf_len]
+
+    tx_md = uhd.types.TXMetadata()
+
+    if start_time is not None:
+        if isinstance(start_time, (int, float)):
+            start_time = uhd.types.TimeSpec(float(start_time))
+        tx_md.time_spec = start_time
+    else:
+        tx_md.time_spec = uhd.types.TimeSpec(
+            usrp.get_time_now().get_real_secs() + INIT_DELAY
+        )
+
+    tx_md.has_time_spec = True
+
+    try:
+        while not quit_event.is_set():
+            tx_streamer.send(tx_buffer, tx_md)
+            tx_md.has_time_spec = False
+    except KeyboardInterrupt:
+        logger.debug("CTRL+C detected — stopping waveform transmission")
+    finally:
+        tx_md.end_of_burst = True
+        tx_streamer.send(np.zeros((num_channels, 0), dtype=np.complex64), tx_md)
+
+
+def tx_waveform_thread(
+    usrp,
+    tx_streamer,
+    quit_event,
+    waveform,
+    active_tx_ch,
+    start_time=None,
+):
+    thr = threading.Thread(
+        target=tx_waveform_once,
+        args=(usrp, tx_streamer, quit_event, waveform, active_tx_ch, start_time),
+    )
+    thr.name = "TX_WAVEFORM_thread"
+    thr.start()
+    return thr
+
+def tx_qpsk_downlink(
+    usrp,
+    tx_streamer,
+    quit_event,
+    phase_corr,
+    start_bf,
+    dac_bits=None,
+    use_dither=False,
+    long_time=False,
+):
+    """
+    根据估计到的 phase_corr 发送 QPSK 下行信号，
+    并在发送前根据 dac_bits 进行量化（支持 1-bit / N-bit / full-res）。
+    """
+
+    logger.debug("########### TX QPSK downlink (with quantization) ###########")
+
+    usrp.set_tx_gain(FREE_TX_GAIN, LOOPBACK_TX_CH)
+
+    # 1) 生成固定 QPSK 符号序列（后面 Rx.py 解调要用同样的序列）
+    #    最简单：固定伪随机种子即可保证 Tx/Rx 一致
+    rng = np.random.default_rng(seed=1234)
+    data_symbols = rng.integers(low=0, high=4, size=NUM_DATA_SYMS)
+
+    # TODO: 后面你在 Rx.py 里做解调时，需要用同样的 seed 和 NUM_DATA_SYMS
+    # 或者把 data_symbols 保存到文件，让 Rx.py 读同一份。
+
+    # 2) 生成基带波形（叠加 beamforming 相位 correction）
+    baseband = generate_qpsk_waveform(
+        symbols=data_symbols,
+        sps=SPS,
+        phase_offset=phase_corr,
+        amplitude=0.8,
+    )
+
+    # 3) 量化：full-res / 1-bit / N-bit
+    tx_wf = quantize_complex_uniform(
+        baseband,
+        bits=dac_bits,
+        full_scale=0.8,
+        add_dither=use_dither,
+        dither_amp=0.1,
+    )
+
+    # 4) UHD 时间对齐
+    start_time = uhd.types.TimeSpec(start_bf)
+
+    # 5) 开 TX
+    tx_thr = tx_waveform_thread(
+        usrp,
+        tx_streamer,
+        quit_event,
+        waveform=tx_wf,
+        active_tx_ch=LOOPBACK_TX_CH,
+        start_time=start_time,
+    )
+
+    tx_meta_thr = tx_meta_thread(tx_streamer, quit_event)
+
+    send_usrp_in_tx_mode(server_ip)
+
+    # 6) TX 持续时间
+    if long_time and "TX_TIME" in globals():
+        time.sleep(TX_TIME + delta(usrp, start_bf))
+    else:
+        time.sleep(10.0 + delta(usrp, start_bf))
+
+    quit_event.set()
+    tx_thr.join()
+    tx_meta_thr.join()
+
+    logger.debug("QPSK downlink transmission completed successfully")
 
 
 def parse_arguments():
@@ -989,13 +1220,16 @@ def main():
 
 
         logger.info("Scheduled downlink start time: %.6f", START_BF)
-        tx_phase_coh(
+
+        tx_qpsk_downlink(
             usrp,
             tx_streamer,
             quit_event,
             phase_corr=phase_corr,
-            start_bf=START_BF, 
-            long_time=False, # Set long_time True if you want to transmit longer than 10 seconds
+            start_bf=START_BF,
+            dac_bits=DAC_BITS,      # 全局变量控制：None / 1 / N
+            use_dither=USE_DITHER,
+            long_time=False,
         )
 
         print("DONE")
