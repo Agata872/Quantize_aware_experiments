@@ -28,6 +28,7 @@ sync_port = "5557"       # Port used for synchronization messages.
 alive_port = "5558"      # Port used for heartbeat/alive messages.
 data_port = "5559"       # Port used for BF / data transmission.
 bf_port = "5560"        # Port used for BF weight transmission.
+results_port = "5561"    # NEW: Port used for DL results from Rx.py
 # =============================================================================
 
 # ------------------------ CLI 参数解析 ------------------------
@@ -59,11 +60,11 @@ alive_socket.bind(f"tcp://{host}:{alive_port}")
 
 # ROUTER: BF 阶段 CSI/权重交互（和客户端的 DEALER 配对）
 bf_socket = context.socket(zmq.ROUTER)
-bf_socket.bind(f"tcp://{host}:{data_port}")
-
-# NEW: BF 端口，专门处理 JSON CSI
-bf_socket = context.socket(zmq.ROUTER)
 bf_socket.bind(f"tcp://{host}:{bf_port}")
+
+# NEW: ROUTER: 接收 Rx.py 发送的 DL 结果
+results_socket = context.socket(zmq.ROUTER)
+results_socket.bind(f"tcp://{host}:{results_port}")
 
 # Measurement and experiment identifiers
 meas_id = 0
@@ -71,9 +72,11 @@ meas_id = 0
 # Unique ID for the experiment based on current UTC timestamp
 unique_id = str(datetime.utcnow().strftime("%Y%m%d%H%M%S"))
 
-# ZeroMQ poller setup for READY / TXMODE
-poller = zmq.Poller()
-poller.register(alive_socket, zmq.POLLIN)
+bf_poller = zmq.Poller()
+bf_poller.register(bf_socket, zmq.POLLIN)
+
+results_poller = zmq.Poller()
+results_poller.register(results_socket, zmq.POLLIN)
 
 new_msg_received = 0
 WAIT_TIMEOUT = 60.0 * 10.0  # 10 minutes
@@ -137,7 +140,6 @@ with open(output_path, "w") as f:
         print(f"Waiting for CSI from {num_tx_subscribers} subscribers for BF computation...")
 
         bf_messages_received = 0
-        bf_poller = zmq.Poller()
         bf_poller.register(bf_socket, zmq.POLLIN)
 
         f.write("    bf_tiles:\n")
@@ -204,3 +206,62 @@ with open(output_path, "w") as f:
 
         print("Measure phases")
         save_phases()
+
+        # ======================== 第四阶段：接收 Rx.py 的 DL 结果 ========================
+        # 非阻塞地收一波结果消息（如果有多个 Rx 节点，会收到多条）
+        results_filename = os.path.join(parent_path, f"data/exp-{unique_id}-dl-results.csv")
+
+        # 如果文件不存在，先写表头
+        write_header = not os.path.exists(results_filename)
+
+        # 给一点时间窗口（例如 5 秒）接收本轮的结果
+        print("Collecting DL results from Rx nodes for up to 5 seconds ...")
+        t_end = time.time() + 10.0
+
+        while time.time() < t_end:
+            socks = dict(results_poller.poll(200))  # 200 ms 一次
+
+            if results_socket in socks and socks[results_socket] == zmq.POLLIN:
+                identity, msg = results_socket.recv_multipart()
+                try:
+                    data = json.loads(msg.decode())
+                except Exception as e:
+                    print("Error decoding DL results JSON:", e)
+                    continue
+
+                host_id   = data.get("host", "unknown")
+                meas      = data.get("meas_id", meas_id)
+                dac_bits  = data.get("dac_bits", None)
+                tx_gain   = data.get("tx_gain", None)
+                rx_gain   = data.get("rx_gain", None)
+                snr_db    = data.get("snr_db", None)
+                rate      = data.get("rate_bpsphz", None)
+
+                print(f"[RESULT] From {host_id}: meas={meas}, bits={dac_bits}, "
+                      f"SNR={snr_db:.2f} dB, R={rate:.3f} bps/Hz")
+
+                # 追加到 CSV
+                import csv
+                with open(results_filename, "a", newline="") as csvfile:
+                    fieldnames = ["experiment", "meas_id", "host",
+                                  "dac_bits", "tx_gain", "rx_gain",
+                                  "snr_db", "rate_bpsphz"]
+                    writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+                    if write_header:
+                        writer.writeheader()
+                        write_header = False
+
+                    writer.writerow({
+                        "experiment": unique_id,
+                        "meas_id": meas,
+                        "host": host_id,
+                        "dac_bits": dac_bits,
+                        "tx_gain": tx_gain,
+                        "rx_gain": rx_gain,
+                        "snr_db": snr_db,
+                        "rate_bpsphz": rate,
+                    })
+
+            else:
+                # 没有新结果，短暂 sleep 一下
+                time.sleep(0.05)

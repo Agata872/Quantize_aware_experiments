@@ -787,6 +787,34 @@ def tx_phase_coh(usrp, tx_streamer, quit_event, phase_corr, start_bf, long_time=
 
     return tx_thr, tx_meta_thr
 
+def send_results_to_server(ip, results_dict):
+    """
+    使用 ZMQ 将本次实验结果发送到 server, 由 server 统一保存。
+    建议 server 端用 PULL/ROUTER 等模式接收并写文件。
+    """
+    import json
+
+    sock = context.socket(zmq.DEALER)
+    # 用 HOSTNAME 作为 identity，方便 server 识别来自哪个节点
+    sock.setsockopt_string(zmq.IDENTITY, HOSTNAME)
+    sock.connect(f"tcp://{ip}:5561")  # 你可以自定义一个新端口，例如 5561
+
+    # 序列化：注意复数要拆成实部/虚部
+    payload = results_dict.copy()
+
+    # 简单处理一下 numpy 类型，避免 JSON 报错
+    for k, v in list(payload.items()):
+        if isinstance(v, np.ndarray):
+            # 只演示一种简单方式：把复数数组拆成 real/imag 列表
+            payload[k + "_real"] = np.asarray(v.real).tolist()
+            payload[k + "_imag"] = np.asarray(v.imag).tolist()
+            del payload[k]
+
+    msg = json.dumps(payload).encode()
+    sock.send(msg)
+
+    # 看你是否需要 server 回 ACK，如果需要可以 REQ/REP 模式，这里先一发了之
+    sock.close()
 
 def parse_arguments():
     """
@@ -944,7 +972,31 @@ def process_downlink_qpsk(iq_samples):
     # np.save("dl_rx_syms.npy", rx_syms)
     # np.save("dl_y_eq.npy", y_eq)
     # np.save("dl_s_tx.npy", s_tx)
+    # ------------------- 发送到 server -------------------
+    results_dict = {
+        "host": HOSTNAME,
+        "meas_id": meas_id,
+        "dac_bits": DAC_BITS if "DAC_BITS" in globals() else None,
+        "tx_gain": LOOPBACK_TX_GAIN if "LOOPBACK_TX_GAIN" in globals() else None,
+        "rx_gain": RX_GAIN,
+        "snr_db": float(snr_db),
+        "gamma_eff": float(gamma_eff),
+        "rate_bpsphz": float(R),
+        "h_hat_real": float(h_hat.real),
+        "h_hat_imag": float(h_hat.imag),
+        # 如果想传一些星座点，就截取一小段
+        "y_eq_head": y_eq[:512],    # 只发前 512 个点，避免太大
+        "s_tx_head": s_tx[:512],
+    }
 
+    try:
+        if server_ip is not None:
+            send_results_to_server(server_ip, results_dict)
+            logger.info("DL results sent to server %s", server_ip)
+        else:
+            logger.warning("server_ip is None, cannot send results to server.")
+    except Exception as e:
+        logger.error("Failed to send results to server: %s", e)
 # -------------------------------
 # Main function: run transmission task (after synchronization control)
 # -------------------------------
