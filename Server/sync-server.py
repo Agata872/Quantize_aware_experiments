@@ -216,7 +216,7 @@ with open(output_path, "w") as f:
 
         # ======================== 第四阶段：接收 Rx.py 的 DL 结果 ========================
         # 非阻塞地收一波结果消息（如果有多个 Rx 节点，会收到多条）
-        results_filename = os.path.join(parent_path, f"data/exp-{unique_id}-dl-results.csv")
+        results_filename = os.path.join(parent_path, f"data/exp-dl-results.csv")
 
         # 如果文件不存在，先写表头
         write_header = not os.path.exists(results_filename)
