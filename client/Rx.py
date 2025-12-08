@@ -29,6 +29,7 @@ RATE = 250e3              # Sampling rate in samples per second (250 kSps)
 LOOPBACK_TX_GAIN = 50 #70     # Empirically determined transmit gain for loopback tests
 PILOT_TX_CH = 0            # Transmit channel for pilot signal
 RX_GAIN = 22              # Empirically determined receive gain (22 dB without splitter, 27 dB with splitter)
+dl_RX_GAIN = 5
 CAPTURE_TIME = 10         # Duration of each capture in seconds
 FREQ = 0                  # Base frequency offset (Hz); 0 means use default center frequency
 # server_ip = "10.128.52.53"  # Optional remote server address (commented out)
@@ -978,7 +979,7 @@ def process_downlink_qpsk(iq_samples):
         "meas_id": meas_id,
         "dac_bits": DAC_BITS if "DAC_BITS" in globals() else None,
         "tx_gain": LOOPBACK_TX_GAIN if "LOOPBACK_TX_GAIN" in globals() else None,
-        "rx_gain": RX_GAIN,
+        "rx_gain": dl_RX_GAIN,
         "snr_db": float(snr_db),
         "gamma_eff": float(gamma_eff),
         "rate_bpsphz": float(R),
@@ -1120,7 +1121,7 @@ def main():
         except Exception as e:
             logger.warning("Could not set RX antenna via PILOT_RX_ANT: %s", e)
         usrp.set_rx_antenna(PILOT_TX_ANT1, PILOT_TX_CH1)
-
+        usrp.set_rx_gain(dl_RX_GAIN, PILOT_RX_CH1)
         # 计划在 START_BF 开始接收下行
         dl_duration = CAPTURE_TIME   # 接收时长，可按需要调整
         start_time_dl = uhd.types.TimeSpec(START_BF)
