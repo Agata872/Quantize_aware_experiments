@@ -13,7 +13,7 @@ RATE: !!float 250e3
 LOOPBACK_TX_GAIN: !!float 50  
 # Transmit gain for loopback tests, empirically determined.
 
-FREE_TX_GAIN: !!float 70  
+FREE_TX_GAIN: !!float 25  
 # Transmit gain when transmitting freely (not in loopback mode).
 
 LOOPBACK_RX_GAIN: !!float 45  
