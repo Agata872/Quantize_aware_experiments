@@ -1135,8 +1135,21 @@ def main():
             duration=dl_duration,
             start_time=start_time_dl,
         )
-
         logger.info("Downlink IQ capture finished, starting baseband processing...")
+
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        # 用 HOSTNAME + meas_id 区分不同节点和测量
+        dl_iq_fname = f"dl_iq_{HOSTNAME}_meas{meas_id}_{ts}.npy"
+
+        np.save(dl_iq_fname, iq_dl)
+        logger.info(
+            "Saved DL IQ samples to %s, shape=%s (num_ch=%d, num_samps=%d)",
+            dl_iq_fname,
+            iq_dl.shape,
+            iq_dl.shape[0],
+            iq_dl.shape[1] if iq_dl.ndim == 2 else -1,
+        )
+
         process_downlink_qpsk(iq_dl)
 
     except Exception as e:
