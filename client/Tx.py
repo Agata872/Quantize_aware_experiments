@@ -544,7 +544,7 @@ def measure_pilot(
     Perform a pilot measurement where THIS USRP ONLY RECEIVES a pilot
     transmitted by another device.
     """
-    usrp.set_rx_antenna(PILOT_RX_ANT, PILOT_RX_CH)
+    usrp.set_rx_antenna(PILOT_RX_ANT1, PILOT_RX_CH1)
     usrp.set_rx_antenna(REF_RX_ANT, REF_RX_CH)
     logger.debug("########### Measure PILOT ###########")
 
