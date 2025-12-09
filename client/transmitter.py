@@ -292,6 +292,6 @@ if __name__ == "__main__":
         fc=fc,
         os_factor=os_factor,
         device_args="type=b200",
-        tx_gain=40.0,   # 建议先不要 70，先 20~40 试
+        tx_gain=70.0,   # 建议先不要 70，先 20~40 试
         channel=1       # 这里要和 RX 用的通道/天线口对应
     )
