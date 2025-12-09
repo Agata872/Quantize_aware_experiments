@@ -22,7 +22,7 @@ os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 DEVICE_ARGS = "type=b200"  # B210 is part of the B200 series; add serial/addr if multiple units
 RX_CHANNEL = 1
-RX_GAIN = 30.0             # RX 增益
+RX_GAIN = 50.0             # RX 增益
 
 # *** 请在每次实验前把这个值改成当前 TX 端使用的增益(dB) ***
 TX_GAIN_DB = 30.0          # <<< 你手动改，比如这次发射端设置 40 dB，就写 40.0
