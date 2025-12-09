@@ -267,6 +267,46 @@ def iq_block_stream(rx_streamer, recv_buffer, rx_md, block_len, timeout=1.0):
                 yield block
         else:
             print("Received 0 samples in this packet.")
+def estimate_snr_and_rate(rx_syms):
+    """
+    输入: rx_syms 为符号速率上的 QPSK 符号（Costas + 时间同步后）
+    步骤:
+        1) 归一化接收符号功率到 1
+        2) 做硬判决得到最近的理想 QPSK 星座点
+        3) 利用 decision-directed 估计噪声功率和 SNR
+        4) 利用 Shannon 公式计算可达速率 R = log2(1 + SNR)
+    返回:
+        snr_lin, snr_db, R_bps_per_Hz
+    """
+    # 1) 归一化接收符号能量
+    rx_syms = rx_syms.astype(np.complex64)
+    rx_syms = rx_syms[~np.isnan(rx_syms)]
+    if rx_syms.size == 0:
+        return 0.0, -np.inf, 0.0
+
+    rx_syms = rx_syms / np.sqrt(np.mean(np.abs(rx_syms) ** 2) + 1e-12)
+
+    # 2) 硬判决到最近的 QPSK 点 (I, Q ∈ {±1})
+    dec_syms = np.sign(rx_syms.real) + 1j * np.sign(rx_syms.imag)
+
+    # 某些点 real 或 imag 恰好为 0，np.sign(0)=0，修一下：
+    dec_syms.real[dec_syms.real == 0] = 1.0
+    dec_syms.imag[dec_syms.imag == 0] = 1.0
+
+    # 3) 噪声估计 (decision-directed)
+    noise = rx_syms - dec_syms
+    sig_power = np.mean(np.abs(dec_syms) ** 2)   # 理想星座功率 ~ 2
+    noise_power = np.mean(np.abs(noise) ** 2) + 1e-12
+
+    snr_lin = sig_power / noise_power
+    snr_db = 10 * np.log10(snr_lin)
+
+    # 4) Shannon 公式下的“可达速率”（bit/s/Hz）
+    # 对单输入单输出 AWGN：R = log2(1 + SNR)
+    R_bps_per_Hz = np.log2(1.0 + snr_lin)
+
+    return snr_lin, snr_db, R_bps_per_Hz
+
 
 # ================== Main loop ==================
 
@@ -314,7 +354,13 @@ try:
             loop_bandwidth=0.05, damping=0.707
         )
         signals["After Fine Sync"] = rx_signal.copy()
+        snr_lin, snr_db, R_bps_per_Hz = estimate_snr_and_rate(rx_signal)
+        print(f"[RATE] Estimated SNR: {snr_db:.2f} dB, "
+              f"R_theoretical ≈ {R_bps_per_Hz:.3f} bit/s/Hz")
 
+        # 如果你想算“在 QPSK 约束下的最大速率（上限 2 bit/s/Hz）”：
+        R_qpsk_max = min(2.0, R_bps_per_Hz)
+        print(f"[RATE] QPSK-constrained max rate ≈ {R_qpsk_max:.3f} bit/s/Hz")
         # ---- Send constellation to server ----
         try:
             sig_to_send = rx_signal.astype(np.complex64)
