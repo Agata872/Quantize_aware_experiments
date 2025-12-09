@@ -38,7 +38,7 @@ def transmit_ofdm(usrp, ofdm_symbol, num_symbols, rate, frequency, gain):
     :param gain: The transmission gain
     """
     # Configure the USRP for transmission
-    usrp.set_rx_antenna("TX/RX", RX_CHANNEL)
+    usrp.set_tx_antenna("TX/RX", RX_CHANNEL)
     usrp.set_tx_rate(rate)
     usrp.set_tx_freq(uhd.types.TuneRequest(frequency))
     usrp.set_tx_gain(gain)
