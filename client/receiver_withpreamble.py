@@ -3,13 +3,19 @@ import uhd                       # <<=== 使用 UHD 控制 B210
 import matplotlib.pyplot as plt
 import time
 import os
+import zmq
+
+
 
 # ================== Configuration ==================
+SERVER_IP = "192.108.2.61"   # 改成你 server 的 IP
+SERVER_PORT = 50001
+TOPIC = b"CONST"
 NOISE_COUNT_THRESHOLD = 10
 fs = 1e6          # Sampling rate (要与发射端一致)
 fc = 920e6        # Center frequency: 920 MHz
 sps = 4           # Samples per symbol（要和发射端的过采样因子匹配）
-SAVE_FIGURES = True        # Save constellation figures
+SAVE_FIGURES = False       # Save constellation figures
 OUTPUT_DIR = "received_constellations"
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
@@ -207,6 +213,12 @@ noise_count = 0
 capture_id = 0
 
 while True:
+    # ZeroMQ PUB：把解调后的符号发给 server
+    context = zmq.Context()
+    pub_socket = context.socket(zmq.PUB)
+    pub_socket.connect(f"tcp://{SERVER_IP}:{SERVER_PORT}")
+    print(f"[Client] Connected to server tcp://{SERVER_IP}:{SERVER_PORT}")
+
     # 每次抓一段数据
     rx_signal, power_db = receive_signal(fs, fc, num_samples=200000, noise_threshold=30.0)
 
@@ -241,6 +253,15 @@ while True:
                                       loop_bandwidth=0.01, damping=0.707)
     signals["After Fine Sync"] = rx_signal.copy()
     plot_psd(rx_signal, fs_symbol, "PSD After Fine Frequency Sync")
+    
+    try:
+        # 确保是 complex64
+        sig_to_send = rx_signal.astype(np.complex64)
+        pub_socket.send_multipart([TOPIC, sig_to_send.tobytes()])
+        # 你可以加一句 debug：
+        # print(f"[Client] Sent {sig_to_send.size} symbols to server")
+    except Exception as e:
+        print(f"[Client] Failed to send constellations: {e}")
 
     # 画 & 保存星座
     save_path = None
