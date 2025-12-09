@@ -14,7 +14,7 @@ OUTPUT_DIR = "received_constellations"
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 DEVICE_ARGS = "type=b200"  # B210 属于 B200 系列；如有多块板子可加 serial/addr
-RX_CHANNEL = 0
+RX_CHANNEL = 1
 RX_GAIN = 20.0             # 先给个中等增益，可根据实际场景调
 
 # ================== Receive signal (B210) ==================
