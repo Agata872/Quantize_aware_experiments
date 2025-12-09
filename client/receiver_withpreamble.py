@@ -213,6 +213,7 @@ def init_rx(fs, fc):
     print("Creating USRP (B210) device for RX...")
     usrp = uhd.usrp.MultiUSRP(DEVICE_ARGS)
 
+    usrp.set_tx_antenna("TX/RX", RX_CHANNEL)
     usrp.set_rx_rate(fs, RX_CHANNEL)
     usrp.set_rx_freq(fc, RX_CHANNEL)
     usrp.set_rx_gain(RX_GAIN, RX_CHANNEL)
