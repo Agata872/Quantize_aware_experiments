@@ -164,6 +164,50 @@ def extract_bits_from_signal(modulated_signal, os_factor=4):
     return ''.join(map(str, bits))
 
 
+# ===================== 1-bit DAC Quantization =====================
+
+def quantize_1bit_dac(
+    x,
+    target_amp=0.7,
+    add_dither=False,
+    dither_std=0.3,
+    rng=None
+):
+    """
+    Simulate complex 1-bit DAC:
+    - I/Q 各 1 bit: sign(Re{x}), sign(Im{x}) ∈ {−1, +1}
+    - 输出映射到幅度约为 target_amp 的 QPSK 星座上: ±target_amp/√2
+
+    x: complex np.array，任意幅度
+    target_amp: 量化后最大幅度（与原代码中 0.7 保持一致）
+    add_dither: 是否在量化前加抖动
+    dither_std: 高斯抖动标准差（相对于归一化后的信号）
+    """
+    x = np.asarray(x, dtype=np.complex64)
+
+    if rng is None:
+        rng = np.random.default_rng()
+
+    # 先做个粗归一化，避免数值非常大/非常小
+    max_abs = np.max(np.abs(x)) + 1e-6
+    x_norm = x / max_abs
+
+    if add_dither:
+        # 复高斯抖动，实部/虚部各 N(0, dither_std^2/2)
+        d = dither_std * (
+            rng.standard_normal(x.shape) + 1j * rng.standard_normal(x.shape)
+        ) / np.sqrt(2.0)
+        x_norm = x_norm + d
+
+    # 1-bit 量化：I/Q 分别取符号
+    q = np.sign(x_norm.real) + 1j * np.sign(x_norm.imag)
+
+    # 映射到幅度 target_amp：|q| = target_amp
+    q = (target_amp / np.sqrt(2.0)) * q
+
+    return q.astype(np.complex64)
+
+
 # ===================== USRP B210 Transmission =====================
 
 def transmit_signal_b210(
@@ -174,12 +218,17 @@ def transmit_signal_b210(
     os_factor=4,
     device_args="type=b200",  # B210 belongs to the B200 series
     tx_gain=0.0,
-    channel=0
+    channel=0,
+    use_1bit=False,          # <--- 新增：是否启用 1-bit DAC 量化
+    add_dither=False,        # <--- 新增：量化前是否加抖动
+    dither_std=0.3           # <--- 新增：抖动强度
 ):
     """
     Continuously transmit baseband QPSK using USRP B210 (UHD).
     Concept: similar to your previous tx_ref/tx_qpsk code,
     fill a large buffer by repeating baseband_signal and send it inside a while-loop.
+
+    如果 use_1bit=True，则在送给 USRP 之前对基带信号做 1-bit DAC 量化。
     """
     try:
         print("Creating USRP (B210) device...")
@@ -202,20 +251,33 @@ def transmit_signal_b210(
         max_samps_per_packet = tx_streamer.get_max_num_samps()
         print(f"Max samps per packet: {max_samps_per_packet}")
 
-        # Normalize amplitude (leave headroom to avoid clipping)
+        # Baseband to complex64
         sig = baseband_signal.astype(np.complex64)
-        sig /= (np.max(np.abs(sig)) + 1e-6)
-        sig *= 0.7  # 0.7 full scale to avoid clipping
+
+        # ==== 在这里插入 1-bit DAC 量化 ====
+        if use_1bit:
+            print("Using 1-bit DAC quantization at TX side...")
+            sig = quantize_1bit_dac(
+                sig,
+                target_amp=0.7,
+                add_dither=add_dither,
+                dither_std=dither_std
+            )
+        else:
+            # 原来的浮点归一化：留出 headroom，避免溢出
+            sig /= (np.max(np.abs(sig)) + 1e-6)
+            sig *= 0.7  # 0.7 full scale to avoid clipping
+        # ==================================
+
+        # 可选：在量化后画星座图，确认已经是 {±A/√2 ± jA/√2}
+        # plot_constellation(sig, os_factor=os_factor)
+        # plot_psd(sig, fs=fs)
 
         # Build a large buffer by repeating sig
         buf_len = 1000 * max_samps_per_packet  # Arbitrary large size
         tx_buffer = np.zeros(buf_len, dtype=np.complex64)
         for i in range(buf_len):
             tx_buffer[i] = sig[i % len(sig)]
-
-        # Constellation / PSD plots should be done once, not inside loop
-        # plot_constellation(sig, os_factor=os_factor)
-        # plot_psd(sig, fs=fs)
 
         # TX metadata
         tx_md = uhd.types.TXMetadata()
@@ -281,7 +343,7 @@ if __name__ == "__main__":
         num_taps=101
     )
 
-    # PSD of baseband signal
+    # PSD of baseband signal (before DAC quantization)
     # plot_psd(baseband_signal, fs=fs)
 
     # Transmit
@@ -292,6 +354,9 @@ if __name__ == "__main__":
         fc=fc,
         os_factor=os_factor,
         device_args="type=b200",
-        tx_gain=20.0,   # Suggested: do not start with 70; try 20–40 first
-        channel=1       # Must match the RX antenna/port
+        tx_gain=30.0,   # Suggested: do not start with 70; try 20–40 first
+        channel=1,      # Must match the RX antenna/port
+        use_1bit=True,          # <--- 打开 1-bit DAC 量化
+        add_dither=False,       # <--- 如果想测试论文里的抖动，可以设为 True
+        dither_std=0.3          # <--- 抖动强度可调
     )
