@@ -289,6 +289,6 @@ if __name__ == "__main__":
         fc=fc,
         os_factor=os_factor,
         device_args="type=b200",  # 如果你有多块 USRP，可在这里加 addr=xxx
-        tx_gain=10.0,              # 先用较小增益，避免功放打爆
+        tx_gain=70.0,              # 先用较小增益，避免功放打爆
         channel=1
     )
