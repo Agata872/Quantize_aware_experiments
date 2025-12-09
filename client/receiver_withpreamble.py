@@ -210,11 +210,11 @@ while True:
     # 每次抓一段数据
     rx_signal, power_db = receive_signal(fs, fc, num_samples=200000, noise_threshold=30.0)
 
-    if power_db < 30:
-        noise_count += 1
-        print(f"Noise detected {noise_count}/{NOISE_COUNT_THRESHOLD} times.")
-    else:
-        noise_count = 0
+    # if power_db < 30:
+    #     noise_count += 1
+    #     print(f"Noise detected {noise_count}/{NOISE_COUNT_THRESHOLD} times.")
+    # else:
+    #     noise_count = 0
 
     # 保存不同阶段的信号，便于画星座
     signals = {}
