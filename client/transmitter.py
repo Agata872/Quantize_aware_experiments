@@ -175,17 +175,16 @@ def transmit_signal_b210(
     channel=0
 ):
     """
-    使用 USRP B210 (UHD) 发送基带 QPSK 信号。
-    baseband_signal: complex64 基带 IQ（过采样）
-    fs: 采样率（Hz），要和 USRP 的 tx_rate 一致
-    fc: 射频中心频率（Hz）
+    使用 USRP B210 (UHD) 连续发送基带 QPSK 信号。
+    思路：参考你之前工程的 tx_ref/tx_qpsk，
+    把 baseband_signal 循环填满一个大 buffer，在 while True 里不断 send。
     """
     try:
         print("Creating USRP (B210) device...")
         usrp = uhd.usrp.MultiUSRP(device_args)
 
         # 设置采样率 / 频率 / 增益
-        usrp.set_tx_rate(fs)
+        usrp.set_tx_rate(fs, channel)
         usrp.set_tx_freq(fc, channel)
         usrp.set_tx_gain(tx_gain, channel)
 
@@ -197,65 +196,69 @@ def transmit_signal_b210(
         st_args = uhd.usrp.StreamArgs("fc32", "sc16")
         st_args.channels = [channel]
         tx_streamer = usrp.get_tx_stream(st_args)
-        tx_metadata = uhd.types.TXMetadata()
-        tx_metadata.start_of_burst = False
-        tx_metadata.end_of_burst = False
-        tx_metadata.has_time_spec = False  # 立即发
+
+        max_samps_per_packet = tx_streamer.get_max_num_samps()
+        print(f"Max samps per packet: {max_samps_per_packet}")
 
         # 归一化幅度，留点 headroom 避免溢出
-        baseband_signal = baseband_signal.astype(np.complex64)
-        baseband_signal /= (np.max(np.abs(baseband_signal)) + 1e-6)
-        baseband_signal *= 0.7  # 0.7 全幅，避免裁剪
+        sig = baseband_signal.astype(np.complex64)
+        sig /= (np.max(np.abs(sig)) + 1e-6)
+        sig *= 0.7  # 0.7 全幅，避免裁剪
 
-        print("Starting transmission loop. Press Ctrl+C to stop.")
+        # 构造一个大 buffer：把 sig 循环铺满
+        buf_len = 1000 * max_samps_per_packet      # 随便取个比较大的长度
+        tx_buffer = np.zeros(buf_len, dtype=np.complex64)
+        for i in range(buf_len):
+            tx_buffer[i] = sig[i % len(sig)]
 
+        # 画一次星座/PSD 自检就行，不要在主循环里画
+        # plot_constellation(sig, os_factor=os_factor)
+        # plot_psd(sig, fs=fs)
+
+        # TX Metadata
+        tx_md = uhd.types.TXMetadata()
+        # 第一次用定时启动，后面就不用 time_spec 了
+        start_time = usrp.get_time_now().get_real_secs() + 0.1
+        tx_md.time_spec = uhd.types.TimeSpec(start_time)
+        tx_md.has_time_spec = True
+        tx_md.start_of_burst = True
+        tx_md.end_of_burst = False
+
+        print("Starting continuous transmission, press Ctrl+C to stop...")
         iteration = 0
-        max_samps_per_packet = tx_streamer.get_max_num_samps()
 
-        while True:
-            # 分块发送（防止一次 buffer 过大）
-            samps = baseband_signal
-            offset = 0
-            while offset < len(samps):
-                chunk = samps[offset:offset + max_samps_per_packet]
-                sent = tx_streamer.send(chunk, tx_metadata)
-                if sent != len(chunk):
-                    print(f"Warning: sent {sent}/{len(chunk)} samples in this packet")
-                offset += sent
+        try:
+            while True:
+                # 发送整个大 buffer
+                sent = tx_streamer.send(tx_buffer, tx_md)
+                if sent != len(tx_buffer):
+                    print(f"Warning: sent {sent}/{len(tx_buffer)} samples")
 
-            print(f"\nTransmission iteration {iteration + 1} completed")
+                # 之后就不再带 time_spec / SOB 了
+                tx_md.has_time_spec = False
+                tx_md.start_of_burst = False
 
-            # 本地自检 bit 判决
-            extracted_bits = extract_bits_from_signal(baseband_signal, os_factor)
-            print("First 100 extracted bits:")
-            print(extracted_bits[:100])
+                iteration += 1
+                if iteration % 100 == 0:
+                    print(f"Continuous TX iterations: {iteration}")
 
-            max_amplitude = np.max(np.abs(baseband_signal))
-            print(f"Baseband max amplitude (after normalization): {max_amplitude:.4f}")
+        except KeyboardInterrupt:
+            print("Transmission stopped by user.")
 
-            # 画一下星座
-            plot_constellation(baseband_signal, os_factor=os_factor)
-
-            iteration += 1
-            time.sleep(0.5)
-
-    except KeyboardInterrupt:
-        print("Transmission stopped by user.")
     except Exception as e:
         print(f"Error during transmission: {e}")
     finally:
-        # 发送一个 end-of-burst 告诉 USRP 停止发射（可选）
+        # 发送一个 end-of-burst 告诉 USRP 停止发射
         try:
-            tx_metadata = uhd.types.TXMetadata()
-            tx_metadata.start_of_burst = False
-            tx_metadata.end_of_burst = True
-            tx_metadata.has_time_spec = False
-
-            dummy = np.zeros(1, dtype=np.complex64)
-            tx_streamer.send(dummy, tx_metadata)
+            tx_md = uhd.types.TXMetadata()
+            tx_md.start_of_burst = False
+            tx_md.end_of_burst = True
+            tx_md.has_time_spec = False
+            tx_streamer.send(np.zeros(0, dtype=np.complex64), tx_md)
         except Exception:
             pass
         print("Transmission finished / cleaned up.")
+
 
 
 # ===================== Main =====================
@@ -279,7 +282,7 @@ if __name__ == "__main__":
     )
 
     # PSD 画的是基带谱
-    plot_psd(baseband_signal, fs=fs)
+    # plot_psd(baseband_signal, fs=fs)
 
     # 发射
     transmit_signal_b210(
@@ -288,7 +291,7 @@ if __name__ == "__main__":
         fs=fs,
         fc=fc,
         os_factor=os_factor,
-        device_args="type=b200",  # 如果你有多块 USRP，可在这里加 addr=xxx
-        tx_gain=70.0,              # 先用较小增益，避免功放打爆
-        channel=1
+        device_args="type=b200",
+        tx_gain=40.0,   # 建议先不要 70，先 20~40 试
+        channel=1       # 这里要和 RX 用的通道/天线口对应
     )
