@@ -292,6 +292,6 @@ if __name__ == "__main__":
         fc=fc,
         os_factor=os_factor,
         device_args="type=b200",
-        tx_gain=30.0,   # Suggested: do not start with 70; try 20–40 first
+        tx_gain=40.0,   # Suggested: do not start with 70; try 20–40 first
         channel=1       # Must match the RX antenna/port
     )
