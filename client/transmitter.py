@@ -264,15 +264,16 @@ def transmit_signal_b210(
 # ===================== Main =====================
 
 if __name__ == "__main__":
-    # filename = "song3.wav"
+    filename = "5song.wav"
+    bitstream = wav_to_binary(filename)
+    # bitstream = ''.join(np.random.choice(['0', '1'], size=20000))
     barker_code = '1111100110101'  # Barker preamble
 
     fs = 1e6       # USRP 采样率
     fc = 920e6     # USRP 射频中心频率
     os_factor = 4  # 过采样倍数 -> 符号率 = fs / os_factor = 250 ksym/s
 
-    # bitstream = wav_to_binary(filename)
-    bitstream = ''.join(np.random.choice(['0', '1'], size=20000))
+
     baseband_signal = qpsk_modulation(
         bitstream,
         preamble_bits=barker_code,
