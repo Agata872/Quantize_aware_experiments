@@ -1,49 +1,91 @@
 import numpy as np
-import adi
+import uhd                       # <<=== 使用 UHD 控制 B210
 import matplotlib.pyplot as plt
 import time
 import os
 
-# Configuration
+# ================== Configuration ==================
 NOISE_COUNT_THRESHOLD = 10
-fs = 1e6        # Sampling rate
-fc = 2.4e9      # Center frequency
-sps = 2         # Samples per symbol
-SAVE_FIGURES = True
+fs = 1e6          # Sampling rate (要与发射端一致)
+fc = 920e6        # Center frequency: 920 MHz
+sps = 4           # Samples per symbol（要和发射端的过采样因子匹配）
+SAVE_FIGURES = True        # Save constellation figures
 OUTPUT_DIR = "received_constellations"
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-# Define Barker Code
-barker_bits = [1, 1, 1, 1, 1, 0, 0, 1, 1, 0, 1, 0, 1]
-if len(barker_bits) % 2 != 0:
-    barker_bits.append(0)
+DEVICE_ARGS = "type=b200"  # B210 属于 B200 系列；如有多块板子可加 serial/addr
+RX_CHANNEL = 0
+RX_GAIN = 20.0             # 先给个中等增益，可根据实际场景调
 
-def bits_to_qpsk(bits):
-    bits = np.array(bits).reshape(-1, 2)
-    mapping = {
-        (0,0): 1+1j,
-        (0,1): -1+1j,
-        (1,1): -1-1j,
-        (1,0): 1-1j,
-    }
-    return np.array([mapping[tuple(b)] for b in bits]) / np.sqrt(2)
+# ================== Receive signal (B210) ==================
 
-barker_symbols = bits_to_qpsk(barker_bits)
-
-# Receive function
-def receive_signal(fs=1e6, fc=2.4e9, num_samples=200000, noise_threshold=30):
+def receive_signal(fs=1e6, fc=920e6, num_samples=200000, noise_threshold=30.0):
+    """
+    使用 USRP B210 接收 num_samples 个基带 IQ 样本。
+    返回: rx_signal (complex64), 平均功率(dB)
+    """
     try:
-        sdr = adi.Pluto("ip:192.168.2.1")
-        sdr.sample_rate = int(fs)
-        sdr.rx_lo = int(fc)
-        sdr.rx_rf_bandwidth = int(fs * 2)
-        sdr.gain_control_mode = "manual"
-        sdr.rx_hardwaregain = 30
+        print("Creating USRP (B210) device for RX...")
+        usrp = uhd.usrp.MultiUSRP(DEVICE_ARGS)
+
+        # 基本参数设置
+        usrp.set_rx_rate(fs, RX_CHANNEL)
+        usrp.set_rx_freq(fc, RX_CHANNEL)
+        usrp.set_rx_gain(RX_GAIN, RX_CHANNEL)
+
+        print(f"RX rate: {usrp.get_rx_rate(RX_CHANNEL)} Hz")
+        print(f"RX center freq: {usrp.get_rx_freq(RX_CHANNEL)} Hz")
+        print(f"RX gain: {usrp.get_rx_gain(RX_CHANNEL)} dB")
+
+        # 创建 RX streamer
+        st_args = uhd.usrp.StreamArgs("fc32", "sc16")
+        st_args.channels = [RX_CHANNEL]
+        rx_stream = usrp.get_rx_stream(st_args)
+
+        max_samps_per_packet = rx_stream.get_max_num_samps()
+        print(f"Max samps per packet: {max_samps_per_packet}")
+
+        # 准备 buffer
+        rx_signal = np.zeros(num_samples, dtype=np.complex64)
+        md = uhd.types.RXMetadata()
+
+        # 启动连续接收
+        stream_cmd = uhd.types.StreamCMD(uhd.types.StreamMode.START_CONTINUOUS)
+        stream_cmd.stream_now = True
+        stream_cmd.time_spec = uhd.types.TimeSpec(0.0)
+        rx_stream.issue_stream_cmd(stream_cmd)
 
         print("Receiving signal...")
-        rx_signal = np.concatenate([sdr.rx() for _ in range(5)])
+        num_received = 0
+        timeout = 1.0  # 秒
+
+        while num_received < num_samples:
+            this_len = min(max_samps_per_packet, num_samples - num_received)
+            buff = np.zeros(this_len, dtype=np.complex64)
+            samps = rx_stream.recv(buff, md, timeout)
+
+            if md.error_code != uhd.types.RXMetadataErrorCode.none:
+                print(f"RX Metadata error: {md.strerror()}")
+                break
+
+            if samps > 0:
+                rx_signal[num_received:num_received + samps] = buff[:samps]
+                num_received += samps
+            else:
+                print("No samples received in this packet.")
+
+        # 停止连续接收
+        stop_cmd = uhd.types.StreamCMD(uhd.types.StreamMode.STOP_CONTINUOUS)
+        rx_stream.issue_stream_cmd(stop_cmd)
+
+        if num_received == 0:
+            print("No samples received at all.")
+            return np.zeros(num_samples, dtype=np.complex64), -100.0
+
+        rx_signal = rx_signal[:num_received]
+
+        # 计算功率 (dB)
         power_db = 10 * np.log10(np.mean(np.abs(rx_signal) ** 2) + 1e-10)
-        del sdr
 
         if power_db < noise_threshold:
             print(f"No strong signal detected (Power: {power_db:.2f} dB).")
@@ -54,20 +96,12 @@ def receive_signal(fs=1e6, fc=2.4e9, num_samples=200000, noise_threshold=30):
 
     except Exception as e:
         print(f"Error receiving signal: {e}")
-        return np.zeros(num_samples, dtype=np.complex64), -100
+        return np.zeros(num_samples, dtype=np.complex64), -100.0
 
-# Barker code detection
-def detect_barker_start(rx_signal, barker_symbols):
-    correlation = np.correlate(rx_signal, barker_symbols[::-1], mode='valid')
-    peak_index = np.argmax(np.abs(correlation))
-    peak_value = np.abs(correlation[peak_index])
-    print(f"Correlation peak at {peak_index}, value = {peak_value:.2f}")
-    if peak_value > len(barker_symbols) * 0.6:
-        return peak_index + len(barker_symbols)
-    return None
 
-# Plot PSD
-def plot_psd(signal, fs, title="PSD"):
+# ================== Plot functions ==================
+
+def plot_psd(signal, fs, title="Power Spectral Density (PSD)"):
     plt.figure(figsize=(10, 4))
     plt.psd(signal, NFFT=1024, Fs=fs, scale_by_freq=True)
     plt.title(title)
@@ -76,7 +110,8 @@ def plot_psd(signal, fs, title="PSD"):
     plt.grid()
     plt.show()
 
-# Coarse frequency sync
+# ================== Coarse frequency sync ==================
+
 def coarse_frequency_sync(signal, fs):
     signal_power4 = signal ** 4
     fft_result = np.fft.fftshift(np.fft.fft(signal_power4))
@@ -87,9 +122,10 @@ def coarse_frequency_sync(signal, fs):
     corrected_signal = signal * np.exp(-1j * 2 * np.pi * peak_freq * t)
     return corrected_signal
 
-# Mueller-Muller Clock Recovery
+# ================== Mueller and Muller Clock Recovery ==================
+
 def mueller_muller_clock_recovery(samples, sps=2):
-    mu = 0
+    mu = 0.0
     out = np.zeros(len(samples) + 10, dtype=np.complex64)
     out_rail = np.zeros(len(samples) + 10, dtype=np.complex64)
     i_in = 0
@@ -104,19 +140,21 @@ def mueller_muller_clock_recovery(samples, sps=2):
         i_in += int(np.floor(mu))
         mu -= np.floor(mu)
         i_out += 1
-    return out[2:i_out]
+    out = out[2:i_out]
+    return out
 
-# 4th order Costas loop
+# ================== 4th Order Costas Loop ==================
+
 def phase_detector_4(sample):
     a = 1.0 if sample.real > 0 else -1.0
     b = 1.0 if sample.imag > 0 else -1.0
     return a * sample.imag - b * sample.real
 
 def costas_loop_4th_order(signal, fs, sps=1, loop_bandwidth=0.01, damping=0.707):
-    fs = fs / sps
+    fs = fs / sps  # Adjust sampling frequency after time sync
     N = len(signal)
-    phase = 0
-    freq = 0
+    phase = 0.0
+    freq = 0.0
     alpha = loop_bandwidth
     beta = loop_bandwidth ** 2 / 4
     out = np.zeros(N, dtype=np.complex64)
@@ -132,10 +170,12 @@ def costas_loop_4th_order(signal, fs, sps=1, loop_bandwidth=0.01, damping=0.707)
     print("Costas Loop Fine Frequency Synchronization Completed.")
     return out
 
-# Constellation plotting
+# ================== Plot all constellations together ==================
+
 def plot_all_constellations(signals_dict, save_name=None):
     fig, axs = plt.subplots(2, 2, figsize=(12, 12))
     fig.suptitle("QPSK Constellations at Different Stages", fontsize=16)
+
     for ax, (stage, signal_stage) in zip(axs.flatten(), signals_dict.items()):
         ax.scatter(signal_stage.real, signal_stage.imag, s=5, color="blue", alpha=0.7)
         lim = max(2, np.max(np.abs(signal_stage)) * 1.2)
@@ -147,57 +187,64 @@ def plot_all_constellations(signals_dict, save_name=None):
         ax.grid()
         ax.set_xlabel("In-phase")
         ax.set_ylabel("Quadrature")
-    plt.tight_layout(rect=[0, 0, 1, 0.96])
+
+    plt.tight_layout(rect=[0, 0, 1, 0.96])  # leave space for main title
     if save_name:
         plt.savefig(save_name)
         print(f"Saved constellation figure: {save_name}")
     plt.show()
 
-# Main loop
+# ================== Main loop ==================
+
 noise_count = 0
 capture_id = 0
 
 while True:
-    rx_signal, power_db = receive_signal(fs, fc)
+    # 每次抓一段数据
+    rx_signal, power_db = receive_signal(fs, fc, num_samples=200000, noise_threshold=30.0)
+
     if power_db < 30:
         noise_count += 1
         print(f"Noise detected {noise_count}/{NOISE_COUNT_THRESHOLD} times.")
-        if noise_count >= NOISE_COUNT_THRESHOLD:
-            print("Noise detected too many times. Stopping reception...")
-            break
-        continue
+    else:
+        noise_count = 0
 
-    start_index = detect_barker_start(rx_signal, barker_symbols)
-    if start_index is None or start_index + 1000 > len(rx_signal):
-        print("Barker code not found or insufficient payload. Skipping.")
-        noise_count += 1
-        continue
-
-    payload = rx_signal[start_index:start_index+1000]
-
+    # 保存不同阶段的信号，便于画星座
     signals = {}
-    signals["Before Sync"] = payload.copy()
-    plot_psd(payload, fs, "PSD Before Sync")
 
-    payload = coarse_frequency_sync(payload, fs)
-    signals["After Coarse Sync"] = payload.copy()
-    plot_psd(payload, fs, "PSD After Coarse Sync")
+    # 1. Before Sync
+    signals["Before Sync"] = rx_signal.copy()
+    plot_psd(rx_signal, fs, "PSD Before Synchronization")
 
-    payload = mueller_muller_clock_recovery(payload, sps)
-    payload = payload[~np.isnan(payload)]
+    # 2. After Coarse Frequency Sync
+    rx_signal = coarse_frequency_sync(rx_signal, fs)
+    signals["After Coarse Sync"] = rx_signal.copy()
+    plot_psd(rx_signal, fs, "PSD After Coarse Frequency Sync")
+
+    # 3. After Time Sync (M&M)
+    rx_signal = mueller_muller_clock_recovery(rx_signal, sps=sps)
+    rx_signal = rx_signal[~np.isnan(rx_signal)]  # Remove NaNs if any
     fs_symbol = fs / sps
-    payload /= np.sqrt(np.mean(np.abs(payload) ** 2))
-    signals["After Time Sync"] = payload.copy()
-    plot_psd(payload, fs_symbol, "PSD After Time Sync")
+    rx_signal /= np.sqrt(np.mean(np.abs(rx_signal) ** 2) + 1e-10)  # Normalize power
+    signals["After Time Sync"] = rx_signal.copy()
+    plot_psd(rx_signal, fs_symbol, "PSD After Time Sync")
 
-    payload = costas_loop_4th_order(payload, fs_symbol, sps=1)
-    signals["After Fine Sync"] = payload.copy()
-    plot_psd(payload, fs_symbol, "PSD After Fine Frequency Sync")
+    # 4. After Fine Frequency Sync (Costas Loop)
+    rx_signal = costas_loop_4th_order(rx_signal, fs_symbol, sps=1,
+                                      loop_bandwidth=0.01, damping=0.707)
+    signals["After Fine Sync"] = rx_signal.copy()
+    plot_psd(rx_signal, fs_symbol, "PSD After Fine Frequency Sync")
 
+    # 画 & 保存星座
     save_path = None
     if SAVE_FIGURES:
         save_path = os.path.join(OUTPUT_DIR, f"constellations_capture_{capture_id}.png")
         capture_id += 1
 
     plot_all_constellations(signals, save_name=save_path)
+
+    if noise_count >= NOISE_COUNT_THRESHOLD:
+        print("Noise detected too many times. Stopping reception...")
+        break
+
     time.sleep(1)
