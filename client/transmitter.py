@@ -326,9 +326,9 @@ def transmit_signal_b210(
 # ===================== Main =====================
 
 if __name__ == "__main__":
-    filename = "5song.wav"
-    bitstream = wav_to_binary(filename)
-    # bitstream = ''.join(np.random.choice(['0', '1'], size=20000))
+    # filename = "5song.wav"
+    # bitstream = wav_to_binary(filename)
+    bitstream = ''.join(np.random.choice(['0', '1'], size=20000))
     barker_code = '1111100110101'  # Barker preamble
 
     fs = 1e6       # USRP sampling rate
