@@ -21,14 +21,14 @@ RX_GAIN = 20.0             # 先给个中等增益，可根据实际场景调
 
 def receive_signal(fs=1e6, fc=920e6, num_samples=200000, noise_threshold=30.0):
     """
-    使用 USRP B210 接收 num_samples 个基带 IQ 样本。
-    返回: rx_signal (complex64), 平均功率(dB)
+    使用兼容所有 UHD Python API 的方式接收 IQ 数据，
+    不使用 START_CONTINUOUS / STOP_CONTINUOUS。
     """
     try:
         print("Creating USRP (B210) device for RX...")
         usrp = uhd.usrp.MultiUSRP(DEVICE_ARGS)
 
-        # 基本参数设置
+        # 基本设置
         usrp.set_rx_rate(fs, RX_CHANNEL)
         usrp.set_rx_freq(fc, RX_CHANNEL)
         usrp.set_rx_gain(RX_GAIN, RX_CHANNEL)
@@ -49,54 +49,50 @@ def receive_signal(fs=1e6, fc=920e6, num_samples=200000, noise_threshold=30.0):
         rx_signal = np.zeros(num_samples, dtype=np.complex64)
         md = uhd.types.RXMetadata()
 
-        # 启动连续接收
-        stream_cmd = uhd.types.StreamCMD(uhd.types.StreamMode.START_CONTINUOUS)
-        stream_cmd.stream_now = True
-        stream_cmd.time_spec = uhd.types.TimeSpec(0.0)
-        rx_stream.issue_stream_cmd(stream_cmd)
+        # ==== UHD 兼容启动方式 ====
+        cmd = uhd.types.StreamCMD(uhd.types.StreamMode.num_ready)
+        cmd.stream_now = True
+        rx_stream.issue_stream_cmd(cmd)
+        # ==========================
 
         print("Receiving signal...")
         num_received = 0
-        timeout = 1.0  # 秒
 
         while num_received < num_samples:
-            this_len = min(max_samps_per_packet, num_samples - num_received)
-            buff = np.zeros(this_len, dtype=np.complex64)
-            samps = rx_stream.recv(buff, md, timeout)
+            chunk_size = min(max_samps_per_packet, num_samples - num_received)
+            buff = np.zeros(chunk_size, dtype=np.complex64)
 
-            if md.error_code != uhd.types.RXMetadataErrorCode.none:
-                print(f"RX Metadata error: {md.strerror()}")
-                break
-
+            samps = rx_stream.recv(buff, md, 1.0)
             if samps > 0:
                 rx_signal[num_received:num_received + samps] = buff[:samps]
                 num_received += samps
             else:
-                print("No samples received in this packet.")
+                print("Warning: received 0 samples in this packet")
 
-        # 停止连续接收
-        stop_cmd = uhd.types.StreamCMD(uhd.types.StreamMode.STOP_CONTINUOUS)
+            if md.error_code != uhd.types.RXMetadataErrorCode.none:
+                print("Metadata error:", md.strerror())
+                break
+
+        # ==== UHD 兼容停止方式 ====
+        stop_cmd = uhd.types.StreamCMD(uhd.types.StreamMode.num_done)
         rx_stream.issue_stream_cmd(stop_cmd)
+        # ============================
+
+        print(f"Total samples received: {num_received}")
 
         if num_received == 0:
-            print("No samples received at all.")
-            return np.zeros(num_samples, dtype=np.complex64), -100.0
+            print("No samples received.")
+            return rx_signal, -100.0
 
-        rx_signal = rx_signal[:num_received]
-
-        # 计算功率 (dB)
-        power_db = 10 * np.log10(np.mean(np.abs(rx_signal) ** 2) + 1e-10)
-
-        if power_db < noise_threshold:
-            print(f"No strong signal detected (Power: {power_db:.2f} dB).")
-        else:
-            print(f"Signal detected! Power: {power_db:.2f} dB")
+        power_db = 10*np.log10(np.mean(np.abs(rx_signal)**2) + 1e-10)
+        print(f"Signal Power: {power_db:.2f} dB")
 
         return rx_signal, power_db
 
     except Exception as e:
         print(f"Error receiving signal: {e}")
         return np.zeros(num_samples, dtype=np.complex64), -100.0
+
 
 
 # ================== Plot functions ==================
