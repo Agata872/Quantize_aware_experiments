@@ -21,77 +21,88 @@ RX_GAIN = 20.0             # 先给个中等增益，可根据实际场景调
 
 def receive_signal(fs=1e6, fc=920e6, num_samples=200000, noise_threshold=30.0):
     """
-    使用兼容所有 UHD Python API 的方式接收 IQ 数据，
-    不使用 START_CONTINUOUS / STOP_CONTINUOUS。
+    使用 B210 + UHD 接收 num_samples 个 IQ 样本。
+    用的是你原来工程里那种 start_cont / stop_cont 风格。
     """
     try:
         print("Creating USRP (B210) device for RX...")
         usrp = uhd.usrp.MultiUSRP(DEVICE_ARGS)
 
-        # 基本设置
+        # 基本参数
         usrp.set_rx_rate(fs, RX_CHANNEL)
         usrp.set_rx_freq(fc, RX_CHANNEL)
         usrp.set_rx_gain(RX_GAIN, RX_CHANNEL)
 
-        print(f"RX rate: {usrp.get_rx_rate(RX_CHANNEL)} Hz")
+        print(f"RX rate       : {usrp.get_rx_rate(RX_CHANNEL)} Hz")
         print(f"RX center freq: {usrp.get_rx_freq(RX_CHANNEL)} Hz")
-        print(f"RX gain: {usrp.get_rx_gain(RX_CHANNEL)} dB")
+        print(f"RX gain       : {usrp.get_rx_gain(RX_CHANNEL)} dB")
 
         # 创建 RX streamer
         st_args = uhd.usrp.StreamArgs("fc32", "sc16")
         st_args.channels = [RX_CHANNEL]
-        rx_stream = usrp.get_rx_stream(st_args)
+        rx_streamer = usrp.get_rx_stream(st_args)
 
-        max_samps_per_packet = rx_stream.get_max_num_samps()
-        print(f"Max samps per packet: {max_samps_per_packet}")
+        num_channels = rx_streamer.get_num_channels()  # 这里应该是 1
+        max_samps_per_packet = rx_streamer.get_max_num_samps()
+        print(f"Num channels         : {num_channels}")
+        print(f"Max samps per packet : {max_samps_per_packet}")
 
-        # 准备 buffer
-        rx_signal = np.zeros(num_samples, dtype=np.complex64)
-        md = uhd.types.RXMetadata()
+        # 接收 buffer：形状 (num_channels, max_samps_per_packet)
+        recv_buffer = np.zeros((num_channels, max_samps_per_packet), dtype=np.complex64)
+        rx_md = uhd.types.RXMetadata()
 
-        # ==== UHD 兼容启动方式 ====
-        cmd = uhd.types.StreamCMD(uhd.types.StreamMode.num_ready)
-        cmd.stream_now = True
-        rx_stream.issue_stream_cmd(cmd)
-        # ==========================
+        # 发 start_cont 命令 —— 这是你原工程里用的方式
+        stream_cmd = uhd.types.StreamCMD(uhd.types.StreamMode.start_cont)
+        stream_cmd.stream_now = True           # 立即开始流
+        # 不用设置 time_spec，简单一点
+        rx_streamer.issue_stream_cmd(stream_cmd)
 
         print("Receiving signal...")
-        num_received = 0
+        rx_signal = np.zeros(num_samples, dtype=np.complex64)
+        num_rx = 0
+        timeout = 1.0  # 秒
 
-        while num_received < num_samples:
-            chunk_size = min(max_samps_per_packet, num_samples - num_received)
-            buff = np.zeros(chunk_size, dtype=np.complex64)
-
-            samps = rx_stream.recv(buff, md, 1.0)
-            if samps > 0:
-                rx_signal[num_received:num_received + samps] = buff[:samps]
-                num_received += samps
-            else:
-                print("Warning: received 0 samples in this packet")
-
-            if md.error_code != uhd.types.RXMetadataErrorCode.none:
-                print("Metadata error:", md.strerror())
+        while num_rx < num_samples:
+            samps = rx_streamer.recv(recv_buffer, rx_md, timeout)
+            if rx_md.error_code != uhd.types.RXMetadataErrorCode.none:
+                print("RX metadata error:", rx_md.strerror())
                 break
 
-        # ==== UHD 兼容停止方式 ====
-        stop_cmd = uhd.types.StreamCMD(uhd.types.StreamMode.num_done)
-        rx_stream.issue_stream_cmd(stop_cmd)
-        # ============================
+            if samps > 0:
+                # 只取我们配置的那一路通道（index 0）
+                take = min(samps, num_samples - num_rx)
+                rx_signal[num_rx:num_rx + take] = recv_buffer[0, :take]
+                num_rx += take
+            else:
+                print("Received 0 samples in this packet, stopping.")
+                break
 
-        print(f"Total samples received: {num_received}")
+        # 停止连续接收
+        stop_cmd = uhd.types.StreamCMD(uhd.types.StreamMode.stop_cont)
+        rx_streamer.issue_stream_cmd(stop_cmd)
 
-        if num_received == 0:
-            print("No samples received.")
-            return rx_signal, -100.0
+        if num_rx == 0:
+            print("No samples received at all.")
+            return np.zeros(num_samples, dtype=np.complex64), -100.0
 
-        power_db = 10*np.log10(np.mean(np.abs(rx_signal)**2) + 1e-10)
+        rx_signal = rx_signal[:num_rx]
+        print(f"Total samples received: {num_rx}")
+        print("First 10 samples:", rx_signal[:10])
+
+        power_db = 10 * np.log10(np.mean(np.abs(rx_signal) ** 2) + 1e-10)
         print(f"Signal Power: {power_db:.2f} dB")
+
+        if power_db < noise_threshold:
+            print(f"No strong signal detected (Power: {power_db:.2f} dB).")
+        else:
+            print(f"Signal detected! Power: {power_db:.2f} dB")
 
         return rx_signal, power_db
 
     except Exception as e:
         print(f"Error receiving signal: {e}")
         return np.zeros(num_samples, dtype=np.complex64), -100.0
+
 
 
 
