@@ -10,7 +10,7 @@ cp_len = 16
 frequency = 920e6      # Hz
 gain = 50              # dB
 rate = 1e6             # S/s
-duration = 10          # seconds
+duration = 1000          # seconds
 TX_CHANNEL = 1         # 用 0 通道发
 
 def generate_ofdm_symbol(fft_len, cp_len):
