@@ -14,10 +14,20 @@ duration = 1000          # seconds
 TX_CHANNEL = 1         # 用 0 通道发
 
 def generate_ofdm_symbol(fft_len, cp_len):
-    symbols = np.random.choice([-1, 1], size=fft_len)
+    # 全部先置 0，只开 2 条子载波
+    symbols = np.zeros(fft_len, dtype=complex)
+    # 选择两个子载波索引（尽量避开 DC 和最高频）
+    k = 10
+    b = np.random.choice([-1, 1])
+    symbols[k] = b
+    symbols[-k] = np.conj(b)
+    # IFFT
     ofdm_time = np.fft.ifft(symbols) * fft_len
+
+    # 加 CP
     ofdm_symbol = np.concatenate([ofdm_time[-cp_len:], ofdm_time])
     return ofdm_symbol.astype(np.complex64)
+
 
 def transmit_ofdm(usrp, ofdm_symbol, rate, frequency, gain, duration):
     symbol_len = len(ofdm_symbol)   # = fft_len + cp_len
