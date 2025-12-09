@@ -1,79 +1,49 @@
-# 📡 Quantize-and-Interferece-aware-experiments
+# 📡 QPSK Transmitter & Receiver with Real-time Constellation Streaming (USRP B210, UHD, ZeroMQ, Flask)
 
-This project provides tools for managing and performing distributed beamforming measurements using USRP B210 devices. It includes tools for synchronization, configuration, and measurement orchestration, using `zmq`, `ansible`, and custom Python scripts.
+This repository implements a full QPSK communication chain using **USRP B210**.  
+It includes:
 
----
-
-## 🗂️ Directory Structure
-
-```
-/Quantize_aware_experiments
-├── Ansible/
-│   ├── inventory.yaml               # List of target hosts
-│   ├── kill.yml                     # Kill running measurement scripts
-│   └── pull_code.yml                # Pull the latest code from Git
-│   └── comp.yml                     # Start the experiments
-│── client/                          
-│   │   ├── pilot.py                 # Generate pilot signal at UE client
-│   │   ├── usrp-cal-bf.py           # Full uplink and downlink process at APs' client
-│   │   ├── cal-settings.yml         # USRPs configuration
-│   │   ├── usrp_b210_fpga_loopback_ctrl.bin # Custom FPGA image
-│   │   └── tools.py                 # Support tool functions
-└── Server/
-│   └── helper.py
-│   ├── meas-phaes.py
-│   ├── scope.py
-│   ├── sync-server.py               # Synchronization from server
-│── data/                            # Auto-generated measurement result files (YAML)
-```
+- A **transmitter** that converts WAV audio to binary, performs QPSK modulation with RRC shaping, and continuously transmits via UHD.
+- A **receiver** that streams IQ samples from B210, performs multi-stage synchronization, and outputs clean QPSK symbols.
+- A **real-time constellation visualization server** that receives symbols via ZeroMQ and displays them on a Flask dashboard.
 
 ---
 
-## 🚀 Measurement Workflow
+## ✨ Features
+
+### **Transmitter**
+- WAV → binary conversion  
+- Optional **Barker preamble** insertion  
+- QPSK modulation  
+- RRC pulse shaping  
+- Oversampling (sps = 4)  
+- Continuous transmission via **USRP B210 (UHD)**  
+- Built-in constellation & PSD plotting utilities  
+
 ---
 
-### On the server:
+### **Receiver**
+- Continuous IQ capture via UHD (start_cont mode)
+- Block-based processing pipeline
+- **Coarse frequency synchronization** (4th-power FFT method)
+- **Mueller & Müller (M&M)** timing recovery
+- **4th-order Costas loop** fine carrier sync
+- Normalization + symbol-rate sampling
+- Constellation snapshots at:
+  - Before Sync  
+  - After Coarse Sync  
+  - After Timing Sync  
+  - After Fine Carrier Sync  
+- Optional saving of constellation figures
+- Sends processed symbols to visualization server via **ZeroMQ PUB**
 
-1. **If do it on the Test Tiles:*
-   
-```bash
-export PYTHONPATH="/usr/local/lib/python3.11/site-packages:$PYTHONPATH"
-```
-
-2. **If do it on the ceiling Tiles:*
-
-```bash
-export PYTHONPATH="/usr/local/lib/python3/dist-packages:$PYTHONPATH""
-```
 ---
 
-### Reference Signal generator:
+### **Visualization Server**
+- ZeroMQ **SUB** listening on `tcp://*:50001`
+- Downsampling + point limiting (performance-safe)
+- Creates constellation PNG using Matplotlib (`Agg` backend)
+- Flask web app with auto-refreshing display (300 ms interval)
 
-```bash
-python3 examples/tx_waveforms.py  --args "type=b200" --freq 920e6 --rate 1e6 --duration 1e8 --channels 0 --wave-freq 0e5 --wave-ampl 0.8 --gain 70
-```
-
-### On the server:
-
-1. **Kill and pull the latest code:**
-
-   ```ansible
-   ansible-playbook -i inventory.yaml pull_code.yml -f40
-   ```
-
-2. **Start synchronization server:**
-
-   ```bash
-   python3 Server/sync-server.py
-   ```
-
-3. **Start beamforming server:**
-
-   ```ansible
-   ansible-playbook -i inventory.yaml comp.yml -f40
-   ```
-
-## 🧪 TODO
-
-* ✅ Validate the downlink transmission phase stability
-* 🔧 Validate the reciprocity-based calibration
+Access in browser:
+`http://<server-ip>:8000`
