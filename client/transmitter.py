@@ -356,7 +356,7 @@ if __name__ == "__main__":
         device_args="type=b200",
         tx_gain=60.0,   # Suggested: do not start with 70; try 20–40 first
         channel=1,      # Must match the RX antenna/port
-        use_1bit=True,          # <--- 打开 1-bit DAC 量化
+        use_1bit=False,          # <--- 打开 1-bit DAC 量化
         add_dither=False,       # <--- 如果想测试论文里的抖动，可以设为 True
         dither_std=0.3          # <--- 抖动强度可调
     )
