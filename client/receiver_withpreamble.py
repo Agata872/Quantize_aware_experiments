@@ -157,7 +157,7 @@ def phase_detector_4(sample):
     b = 1.0 if sample.imag > 0 else -1.0
     return a * sample.imag - b * sample.real
 
-def costas_loop_4th_order(signal, fs, sps=4, loop_bandwidth=0.05, damping=0.707):
+def costas_loop_4th_order(signal, fs, sps=4, loop_bandwidth=0.01, damping=0.707):
     fs = fs / sps  # Adjust sampling frequency after time sync
     N = len(signal)
     phase = 0.0
