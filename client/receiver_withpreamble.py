@@ -207,72 +207,133 @@ def plot_all_constellations(signals_dict, save_name=None):
         print(f"Saved constellation figure: {save_name}")
     plt.show()
 
+def init_rx(fs, fc):
+    print("Creating USRP (B210) device for RX...")
+    usrp = uhd.usrp.MultiUSRP(DEVICE_ARGS)
+
+    usrp.set_rx_rate(fs, RX_CHANNEL)
+    usrp.set_rx_freq(fc, RX_CHANNEL)
+    usrp.set_rx_gain(RX_GAIN, RX_CHANNEL)
+
+    print(f"RX rate       : {usrp.get_rx_rate(RX_CHANNEL)} Hz")
+    print(f"RX center freq: {usrp.get_rx_freq(RX_CHANNEL)} Hz")
+    print(f"RX gain       : {usrp.get_rx_gain(RX_CHANNEL)} dB")
+
+    st_args = uhd.usrp.StreamArgs("fc32", "sc16")
+    st_args.channels = [RX_CHANNEL]
+    rx_streamer = usrp.get_rx_stream(st_args)
+
+    num_channels = rx_streamer.get_num_channels()
+    max_samps_per_packet = rx_streamer.get_max_num_samps()
+    print(f"Num channels         : {num_channels}")
+    print(f"Max samps per packet : {max_samps_per_packet}")
+
+    recv_buffer = np.zeros((num_channels, max_samps_per_packet), dtype=np.complex64)
+    rx_md = uhd.types.RXMetadata()
+
+    # 只 start_cont 一次
+    stream_cmd = uhd.types.StreamCMD(uhd.types.StreamMode.start_cont)
+    stream_cmd.stream_now = True
+    rx_streamer.issue_stream_cmd(stream_cmd)
+
+    return usrp, rx_streamer, recv_buffer, rx_md
+
+def iq_block_stream(rx_streamer, recv_buffer, rx_md, block_len, timeout=1.0):
+    """
+    持续从 B210 接收 IQ，内部维护一个 buffer，
+    每当累积到 block_len 个样本，就 yield 一块出来。
+    """
+    num_channels = rx_streamer.get_num_channels()
+    assert num_channels == 1  # 你现在只用一个通道
+
+    buf = np.zeros(0, dtype=np.complex64)  # 滚动缓冲
+
+    while True:
+        samps = rx_streamer.recv(recv_buffer, rx_md, timeout)
+        if rx_md.error_code != uhd.types.RXMetadataErrorCode.none:
+            print("RX metadata error:", rx_md.strerror())
+            continue  # 或者 break，看你想不想继续
+
+        if samps > 0:
+            new_data = recv_buffer[0, :samps]
+            # 拼到滚动缓冲后面
+            buf = np.concatenate([buf, new_data])
+
+            # 如果缓冲里够一块或多块，就吐出去
+            while buf.size >= block_len:
+                block = buf[:block_len].copy()
+                buf = buf[block_len:]
+                yield block
+        else:
+            print("Received 0 samples in this packet.")
+
 # ================== Main loop ==================
 
-noise_count = 0
+BLOCK_LEN = 200000  # 每块处理这么多 IQ 样本
+
+# ---- 初始化 USRP + RX 流 ----
+usrp, rx_streamer, recv_buffer, rx_md = init_rx(fs, fc)
+
+# ---- 初始化 ZeroMQ（只建一次）----
+context = zmq.Context()
+pub_socket = context.socket(zmq.PUB)
+pub_socket.connect(f"tcp://{SERVER_IP}:{SERVER_PORT}")
+print(f"[Client] Connected to server tcp://{SERVER_IP}:{SERVER_PORT}")
+
 capture_id = 0
 
-while True:
-    # ZeroMQ PUB：把解调后的符号发给 server
-    context = zmq.Context()
-    pub_socket = context.socket(zmq.PUB)
-    pub_socket.connect(f"tcp://{SERVER_IP}:{SERVER_PORT}")
-    print(f"[Client] Connected to server tcp://{SERVER_IP}:{SERVER_PORT}")
+try:
+    for rx_signal in iq_block_stream(rx_streamer, recv_buffer, rx_md, BLOCK_LEN):
 
-    # 每次抓一段数据
-    rx_signal, power_db = receive_signal(fs, fc, num_samples=200000, noise_threshold=30.0)
+        # 计算当前块功率
+        power_db = 10 * np.log10(np.mean(np.abs(rx_signal) ** 2) + 1e-10)
+        print(f"Block power: {power_db:.2f} dB")
 
-    # if power_db < 30:
-    #     noise_count += 1
-    #     print(f"Noise detected {noise_count}/{NOISE_COUNT_THRESHOLD} times.")
-    # else:
-    #     noise_count = 0
+        # ==== 下面就是你原来的“处理 + 画图 + 发送”逻辑，可以按需精简 ====
+        signals = {}
+        signals["Before Sync"] = rx_signal.copy()
 
-    # 保存不同阶段的信号，便于画星座
-    signals = {}
+        # 调试时才画 PSD，不然会很卡
+        # plot_psd(rx_signal, fs, "PSD Before Synchronization")
 
-    # 1. Before Sync
-    signals["Before Sync"] = rx_signal.copy()
-    plot_psd(rx_signal, fs, "PSD Before Synchronization")
+        # 1. 粗频偏
+        rx_signal = coarse_frequency_sync(rx_signal, fs)
+        signals["After Coarse Sync"] = rx_signal.copy()
 
-    # 2. After Coarse Frequency Sync
-    rx_signal = coarse_frequency_sync(rx_signal, fs)
-    signals["After Coarse Sync"] = rx_signal.copy()
-    plot_psd(rx_signal, fs, "PSD After Coarse Frequency Sync")
+        # 2. M&M 定时恢复
+        rx_signal = mueller_muller_clock_recovery(rx_signal, sps=sps)
+        rx_signal = rx_signal[~np.isnan(rx_signal)]
+        fs_symbol = fs / sps
+        rx_signal /= np.sqrt(np.mean(np.abs(rx_signal) ** 2) + 1e-10)
+        signals["After Time Sync"] = rx_signal.copy()
 
-    # 3. After Time Sync (M&M)
-    rx_signal = mueller_muller_clock_recovery(rx_signal, sps=sps)
-    rx_signal = rx_signal[~np.isnan(rx_signal)]  # Remove NaNs if any
-    fs_symbol = fs / sps
-    rx_signal /= np.sqrt(np.mean(np.abs(rx_signal) ** 2) + 1e-10)  # Normalize power
-    signals["After Time Sync"] = rx_signal.copy()
-    plot_psd(rx_signal, fs_symbol, "PSD After Time Sync")
+        # 3. Costas Loop 精细载波同步
+        rx_signal = costas_loop_4th_order(
+            rx_signal, fs_symbol, sps=1,
+            loop_bandwidth=0.05, damping=0.707
+        )
+        signals["After Fine Sync"] = rx_signal.copy()
 
-    # 4. After Fine Frequency Sync (Costas Loop)
-    rx_signal = costas_loop_4th_order(rx_signal, fs_symbol, sps=1,
-                                      loop_bandwidth=0.05, damping=0.707)
-    signals["After Fine Sync"] = rx_signal.copy()
-    plot_psd(rx_signal, fs_symbol, "PSD After Fine Frequency Sync")
+        # ---- 发送到服务器 ----
+        try:
+            sig_to_send = rx_signal.astype(np.complex64)
+            pub_socket.send_multipart([TOPIC, sig_to_send.tobytes()])
+            print(f"[Client] Sent {sig_to_send.size} symbols to server (block {capture_id})")
+        except Exception as e:
+            print(f"[Client] Failed to send constellations: {e}")
 
-    try:
-        # 确保是 complex64
-        sig_to_send = rx_signal.astype(np.complex64)
-        pub_socket.send_multipart([TOPIC, sig_to_send.tobytes()])
-        # 你可以加一句 debug：
-        # print(f"[Client] Sent {sig_to_send.size} symbols to server")
-    except Exception as e:
-        print(f"[Client] Failed to send constellations: {e}")
-
-    # 画 & 保存星座
-    save_path = None
-    if SAVE_FIGURES:
-        save_path = os.path.join(OUTPUT_DIR, f"constellations_capture_{capture_id}.png")
+        # ---- 星座图（可选 / 调试用）----
+        if SAVE_FIGURES:
+            save_path = os.path.join(OUTPUT_DIR, f"constellations_capture_{capture_id}.png")
+            plot_all_constellations(signals, save_name=save_path)
         capture_id += 1
 
-    plot_all_constellations(signals, save_name=save_path)
+except KeyboardInterrupt:
+    print("KeyboardInterrupt, stopping RX...")
 
-    if noise_count >= NOISE_COUNT_THRESHOLD:
-        print("Noise detected too many times. Stopping reception...")
-        break
+finally:
+    # 停止连续接收
+    stop_cmd = uhd.types.StreamCMD(uhd.types.StreamMode.stop_cont)
+    rx_streamer.issue_stream_cmd(stop_cmd)
+    print("RX stream stopped.")
 
-    time.sleep(1)
