@@ -5,12 +5,13 @@ import time
 import os
 import zmq
 
-
-
 # ================== Configuration ==================
 SERVER_IP = "192.108.2.61"   # Change to your server IP
 SERVER_PORT = 50001
-TOPIC = b"CONST"
+
+TOPIC_CONST = b"CONST"       # 保留星座发送的 topic（如需要）
+TOPIC_RATE  = b"RATE"        # 新增：发送平均可达速率的 topic
+
 NOISE_COUNT_THRESHOLD = 10
 fs = 1e6          # Sampling rate (must match transmitter)
 fc = 920e6        # Center frequency: 920 MHz
@@ -21,14 +22,19 @@ os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 DEVICE_ARGS = "type=b200"  # B210 is part of the B200 series; add serial/addr if multiple units
 RX_CHANNEL = 1
-RX_GAIN = 30.0             # Moderate gain; tune depending on environment
+RX_GAIN = 30.0             # RX 增益
+
+# *** 请在每次实验前把这个值改成当前 TX 端使用的增益(dB) ***
+TX_GAIN_DB = 0.0          # <<< 你手动改，比如这次发射端设置 40 dB，就写 40.0
+
+# 每个 TX 增益下要重复多少次测量
+N_MEAS = 100
 
 # ================== Receive signal (B210) ==================
 
 def receive_signal(fs=1e6, fc=920e6, num_samples=200000, noise_threshold=30.0):
     """
-    Receive num_samples IQ samples using B210 + UHD.
-    Follows the same start_cont / stop_cont style used in your previous project.
+    单次拉取 num_samples 个 IQ（旧函数，主流程现在用 iq_block_stream，可保留以备用）
     """
     try:
         print("Creating USRP (B210) device for RX...")
@@ -60,7 +66,6 @@ def receive_signal(fs=1e6, fc=920e6, num_samples=200000, noise_threshold=30.0):
         # Send start_cont command — same style as your old project
         stream_cmd = uhd.types.StreamCMD(uhd.types.StreamMode.start_cont)
         stream_cmd.stream_now = True           # Start streaming immediately
-        # No time_spec needed for simplicity
         rx_streamer.issue_stream_cmd(stream_cmd)
 
         print("Receiving signal...")
@@ -108,9 +113,6 @@ def receive_signal(fs=1e6, fc=920e6, num_samples=200000, noise_threshold=30.0):
     except Exception as e:
         print(f"Error receiving signal: {e}")
         return np.zeros(num_samples, dtype=np.complex64), -100.0
-
-
-
 
 # ================== Plot functions ==================
 
@@ -201,7 +203,7 @@ def plot_all_constellations(signals_dict, save_name=None):
         ax.set_xlabel("In-phase")
         ax.set_ylabel("Quadrature")
 
-    plt.tight_layout(rect=[0, 0, 1, 0.96])  # Leave space for main title
+    plt.tight_layout(rect=[0, 0, 1, 0.96])
     if save_name:
         plt.savefig(save_name)
         print(f"Saved constellation figure: {save_name}")
@@ -221,6 +223,8 @@ def init_rx(fs, fc):
 
     st_args = uhd.usrp.StreamArgs("fc32", "sc16")
     st_args.channels = [RX_CHANNEL]
+    rx_streamer = usrp.get_tx_stream if False else usrp.get_rx_stream(st_args)  # 只是防止误改提示
+
     rx_streamer = usrp.get_rx_stream(st_args)
 
     num_channels = rx_streamer.get_num_channels()
@@ -253,32 +257,24 @@ def iq_block_stream(rx_streamer, recv_buffer, rx_md, block_len, timeout=1.0):
         samps = rx_streamer.recv(recv_buffer, rx_md, timeout)
         if rx_md.error_code != uhd.types.RXMetadataErrorCode.none:
             print("RX metadata error:", rx_md.strerror())
-            continue  # or break depending on desired behavior
+            continue
 
         if samps > 0:
             new_data = recv_buffer[0, :samps]
-            # Append to rolling buffer
             buf = np.concatenate([buf, new_data])
 
-            # If enough samples for a block (or multiple blocks), output them
             while buf.size >= block_len:
                 block = buf[:block_len].copy()
                 buf = buf[block_len:]
                 yield block
         else:
             print("Received 0 samples in this packet.")
+
 def estimate_snr_and_rate(rx_syms):
     """
     输入: rx_syms 为符号速率上的 QPSK 符号（Costas + 时间同步后）
-    步骤:
-        1) 归一化接收符号功率到 1
-        2) 做硬判决得到最近的理想 QPSK 星座点
-        3) 利用 decision-directed 估计噪声功率和 SNR
-        4) 利用 Shannon 公式计算可达速率 R = log2(1 + SNR)
-    返回:
-        snr_lin, snr_db, R_bps_per_Hz
+    返回: snr_lin, snr_db, R_bps_per_Hz
     """
-    # 1) 归一化接收符号能量
     rx_syms = rx_syms.astype(np.complex64)
     rx_syms = rx_syms[~np.isnan(rx_syms)]
     if rx_syms.size == 0:
@@ -286,36 +282,27 @@ def estimate_snr_and_rate(rx_syms):
 
     rx_syms = rx_syms / np.sqrt(np.mean(np.abs(rx_syms) ** 2) + 1e-12)
 
-    # 2) 硬判决到最近的 QPSK 点 (I, Q ∈ {±1})
     dec_syms = np.sign(rx_syms.real) + 1j * np.sign(rx_syms.imag)
-
-    # 某些点 real 或 imag 恰好为 0，np.sign(0)=0，修一下：
     dec_syms.real[dec_syms.real == 0] = 1.0
     dec_syms.imag[dec_syms.imag == 0] = 1.0
 
-    # 3) 噪声估计 (decision-directed)
     noise = rx_syms - dec_syms
-    sig_power = np.mean(np.abs(dec_syms) ** 2)   # 理想星座功率 ~ 2
+    sig_power = np.mean(np.abs(dec_syms) ** 2)   # ~2
     noise_power = np.mean(np.abs(noise) ** 2) + 1e-12
 
     snr_lin = sig_power / noise_power
     snr_db = 10 * np.log10(snr_lin)
-
-    # 4) Shannon 公式下的“可达速率”（bit/s/Hz）
-    # 对单输入单输出 AWGN：R = log2(1 + SNR)
     R_bps_per_Hz = np.log2(1.0 + snr_lin)
-
     return snr_lin, snr_db, R_bps_per_Hz
-
 
 # ================== Main loop ==================
 
-BLOCK_LEN = 200000  # Process this many IQ samples per block
+BLOCK_LEN = 200000  # 每次处理的 IQ 数量
 
 # ---- Initialize USRP + RX stream ----
 usrp, rx_streamer, recv_buffer, rx_md = init_rx(fs, fc)
 
-# ---- Initialize ZeroMQ (only created once) ----
+# ---- Initialize ZeroMQ ----
 context = zmq.Context()
 pub_socket = context.socket(zmq.PUB)
 pub_socket.connect(f"tcp://{SERVER_IP}:{SERVER_PORT}")
@@ -323,19 +310,20 @@ print(f"[Client] Connected to server tcp://{SERVER_IP}:{SERVER_PORT}")
 
 capture_id = 0
 
+snr_list = []
+R_theo_list = []
+R_qpsk_list = []
+
 try:
     for rx_signal in iq_block_stream(rx_streamer, recv_buffer, rx_md, BLOCK_LEN):
 
-        # Compute power of this block
+        print(f"=== Capture {capture_id+1}/{N_MEAS} ===")
+
         power_db = 10 * np.log10(np.mean(np.abs(rx_signal) ** 2) + 1e-10)
         print(f"Block power: {power_db:.2f} dB")
 
-        # ==== Below is your original “processing + plotting + sending” logic ====
         signals = {}
         signals["Before Sync"] = rx_signal.copy()
-
-        # Draw PSD only when debugging (slow if used continuously)
-        # plot_psd(rx_signal, fs, "PSD Before Synchronization")
 
         # 1. Coarse frequency offset correction
         rx_signal = coarse_frequency_sync(rx_signal, fs)
@@ -354,26 +342,56 @@ try:
             loop_bandwidth=0.05, damping=0.707
         )
         signals["After Fine Sync"] = rx_signal.copy()
+
+        # 4. SNR & Achievable Rate estimation
         snr_lin, snr_db, R_bps_per_Hz = estimate_snr_and_rate(rx_signal)
+        R_qpsk_max = min(2.0, R_bps_per_Hz)
+
         print(f"[RATE] Estimated SNR: {snr_db:.2f} dB, "
               f"R_theoretical ≈ {R_bps_per_Hz:.3f} bit/s/Hz")
-
-        # 如果你想算“在 QPSK 约束下的最大速率（上限 2 bit/s/Hz）”：
-        R_qpsk_max = min(2.0, R_bps_per_Hz)
         print(f"[RATE] QPSK-constrained max rate ≈ {R_qpsk_max:.3f} bit/s/Hz")
-        # ---- Send constellation to server ----
+
+        snr_list.append(snr_db)
+        R_theo_list.append(R_bps_per_Hz)
+        R_qpsk_list.append(R_qpsk_max)
+
+        # 如果你还想看星座，可以继续发到 server（可选）
         try:
             sig_to_send = rx_signal.astype(np.complex64)
-            pub_socket.send_multipart([TOPIC, sig_to_send.tobytes()])
+            pub_socket.send_multipart([TOPIC_CONST, sig_to_send.tobytes()])
             print(f"[Client] Sent {sig_to_send.size} symbols to server (block {capture_id})")
         except Exception as e:
             print(f"[Client] Failed to send constellations: {e}")
 
-        # ---- Constellation plot (optional / debugging) ----
         if SAVE_FIGURES:
             save_path = os.path.join(OUTPUT_DIR, f"constellations_capture_{capture_id}.png")
             plot_all_constellations(signals, save_name=save_path)
+
         capture_id += 1
+
+        # ---- 收够 N_MEAS 次后，计算平均速率并发给 server ----
+        if capture_id >= N_MEAS:
+            avg_snr = float(np.mean(snr_list))
+            avg_R_theo = float(np.mean(R_theo_list))
+            avg_R_qpsk = float(np.mean(R_qpsk_list))
+
+            print("======================================")
+            print(f"[SUMMARY] TX_GAIN_DB = {TX_GAIN_DB:.1f} dB")
+            print(f"[SUMMARY] Avg SNR       = {avg_snr:.2f} dB")
+            print(f"[SUMMARY] Avg R_theo    = {avg_R_theo:.3f} bit/s/Hz")
+            print(f"[SUMMARY] Avg R_QPSKmax = {avg_R_qpsk:.3f} bit/s/Hz")
+            print("======================================")
+
+            # 组成一行 CSV 文本: tx_gain_db, avg_snr_db, avg_R_theo, avg_R_qpsk
+            csv_line = f"{TX_GAIN_DB:.1f},{avg_snr:.4f},{avg_R_theo:.4f},{avg_R_qpsk:.4f}"
+            try:
+                pub_socket.send_multipart([TOPIC_RATE, csv_line.encode("utf-8")])
+                print(f"[Client] Sent averaged rate line to server: {csv_line}")
+            except Exception as e:
+                print(f"[Client] Failed to send averaged rate: {e}")
+
+            # 做完当前 TX 增益下的 100 次测量后退出
+            break
 
 except KeyboardInterrupt:
     print("KeyboardInterrupt, stopping RX...")
