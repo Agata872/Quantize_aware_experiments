@@ -107,6 +107,7 @@ def plot_psd(signal, fs):
     plt.xlabel("Frequency (Hz)")
     plt.ylabel("Power/Frequency (dB/Hz)")
     plt.grid()
+    plt.savefig("transmitted_signal_psd.png")
     plt.show()
 
 
