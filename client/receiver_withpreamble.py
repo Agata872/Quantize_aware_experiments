@@ -250,10 +250,10 @@ while True:
 
     # 4. After Fine Frequency Sync (Costas Loop)
     rx_signal = costas_loop_4th_order(rx_signal, fs_symbol, sps=1,
-                                      loop_bandwidth=0.01, damping=0.707)
+                                      loop_bandwidth=0.05, damping=0.707)
     signals["After Fine Sync"] = rx_signal.copy()
     plot_psd(rx_signal, fs_symbol, "PSD After Fine Frequency Sync")
-    
+
     try:
         # 确保是 complex64
         sig_to_send = rx_signal.astype(np.complex64)
