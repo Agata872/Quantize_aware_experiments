@@ -9,7 +9,7 @@ cp_len = 16
 # USRP Parameters
 frequency = 920e6      # Hz
 gain = 50              # dB
-rate = 1e6             # S/s
+rate = 20e6             # S/s
 duration = 1000          # seconds
 TX_CHANNEL = 1         # 用 0 通道发
 
