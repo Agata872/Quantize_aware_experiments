@@ -5,21 +5,21 @@ import threading
 import numpy as np
 import zmq
 import matplotlib
-matplotlib.use("Agg")  # 后端用 Agg，在服务器上也能画图
+matplotlib.use("Agg")  # Use Agg backend so plotting works on a headless server
 import matplotlib.pyplot as plt
 
 from flask import Flask, send_file, render_template_string
 
-# ================== 配置 ==================
-BIND_ADDR = "tcp://*:50001"   # ZMQ 监听地址，客户端要 connect 到这里
-TOPIC = b"CONST"              # ZMQ 主题名，要与客户端一致
-DECIM = 4                     # 下采样因子（防止点太多）
-MAX_POINTS = 5000             # 每帧最多点数
-HTTP_HOST = "0.0.0.0"         # Flask 监听地址
-HTTP_PORT = 8000              # 浏览器访问的端口
+# ================== Configuration ==================
+BIND_ADDR = "tcp://*:50001"   # ZMQ listening address; clients must connect to this
+TOPIC = b"CONST"              # ZMQ topic name; must match the client
+DECIM = 4                     # Decimation factor (to avoid too many points)
+MAX_POINTS = 5000             # Maximum number of points per frame
+HTTP_HOST = "0.0.0.0"         # Flask listening address
+HTTP_PORT = 8000              # Port for browser access
 # =========================================
 
-# 存储最新一张星座图的 PNG（二进制）
+# Store the latest constellation PNG (binary data)
 latest_png = None
 png_lock = threading.Lock()
 
@@ -42,7 +42,7 @@ HTML_PAGE = """
     <img id="const_img" src="/constellation.png?ts={{ ts }}" alt="constellation">
 
     <script>
-        // 每 300ms 刷新一下图片（加时间戳防浏览器缓存）
+        // Refresh the image every 300 ms (timestamp added to avoid browser caching)
         setInterval(function () {
             const img = document.getElementById("const_img");
             const now = Date.now();
@@ -68,7 +68,7 @@ def constellation_png():
     with png_lock:
         img = latest_png
 
-    # 还没任何数据时返回一张空图，避免 404
+    # If no data has been received yet, return an empty placeholder figure instead of 404
     if img is None:
         buf = io.BytesIO()
         fig, ax = plt.subplots(figsize=(6, 6))
@@ -88,7 +88,8 @@ def constellation_png():
 
 def zmq_worker():
     """
-    后台线程：从 ZMQ 收 IQ，画星座，更新 latest_png。
+    Background thread:
+    Receive IQ data from ZMQ, draw the constellation, and update latest_png.
     """
     global latest_png
 
@@ -106,7 +107,7 @@ def zmq_worker():
             if data.size == 0:
                 continue
 
-            # 下采样，限制点数
+            # Downsample and limit the number of points
             data = data[::DECIM]
             if data.size > MAX_POINTS:
                 data = data[:MAX_POINTS]
@@ -114,7 +115,7 @@ def zmq_worker():
             I = data.real
             Q = data.imag
 
-            # 画一张新的星座图
+            # Draw a new constellation figure
             fig, ax = plt.subplots(figsize=(6, 6))
             ax.scatter(I, Q, s=2, alpha=0.6)
             ax.set_xlabel("In-phase (I)")
@@ -140,12 +141,12 @@ def zmq_worker():
 
 
 def main():
-    # 启动 ZMQ 接收线程
+    # Start the ZMQ receiving thread
     t = threading.Thread(target=zmq_worker, daemon=True)
     t.start()
 
     print(f"[Server] HTTP server on http://{HTTP_HOST}:{HTTP_PORT}/")
-    # 开启 Flask
+    # Start Flask HTTP server
     app.run(host=HTTP_HOST, port=HTTP_PORT, debug=False)
 
 
