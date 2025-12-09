@@ -14,6 +14,7 @@ frequency = 920e6  # Center frequency in Hz
 gain = 20              # Transmission gain in dB
 rate = 1e6             # Sample rate in samples per second
 duration = 10          # Duration of transmission in seconds
+RX_CHANNEL = 1          # RX channel index
 
 def receive_samples(usrp, rate, frequency, gain, num_samps):
     """
@@ -25,6 +26,7 @@ def receive_samples(usrp, rate, frequency, gain, num_samps):
     :param gain: The reception gain
     :param num_samps: The number of samples to receive
     """
+    usrp.set_rx_antenna("TX/RX", RX_CHANNEL)
     usrp.set_rx_rate(rate)
     usrp.set_rx_freq(uhd.types.TuneRequest(frequency))
     usrp.set_rx_gain(gain)
