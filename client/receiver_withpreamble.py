@@ -29,7 +29,9 @@ TX_GAIN_DB = 50.0          # <<< 你手动改，比如这次发射端设置 40 d
 
 # 每个 TX 增益下要重复多少次测量
 N_MEAS = 100
-
+RRC_BETA     = 0.35
+RRC_SPS      = 4
+RRC_NUM_TAPS = 101
 # ================== Receive signal (B210) ==================
 
 def receive_signal(fs=1e6, fc=920e6, num_samples=200000, noise_threshold=30.0):
@@ -157,6 +159,44 @@ def mueller_muller_clock_recovery(samples, sps=2):
         i_out += 1
     out = out[2:i_out]
     return out
+
+def rrc_filter(beta, sps, num_taps):
+    """
+    Generate Root Raised Cosine (RRC) filter coefficients (energy-normalized).
+    beta: roll-off factor
+    sps: samples per symbol (oversampling rate)
+    num_taps: number of filter taps (preferably odd)
+    """
+    T = 1.0  # Symbol duration
+    t = np.arange(-num_taps // 2, num_taps // 2 + 1) / sps  # Time axis in symbol periods
+
+    h = np.zeros_like(t, dtype=np.float64)
+    for i, ti in enumerate(t):
+        if np.isclose(ti, 0.0):
+            # t = 0
+            h[i] = (1.0 / T) * (1 + beta * (4 / np.pi - 1))
+        elif beta != 0 and np.isclose(np.abs(ti), T / (4 * beta)):
+            # t = ±T/(4β)
+            h[i] = (beta / (T * np.sqrt(2))) * (
+                (1 + 2 / np.pi) * np.sin(np.pi / (4 * beta))
+                + (1 - 2 / np.pi) * np.cos(np.pi / (4 * beta))
+            )
+        else:
+            # General case
+            numerator = (
+                np.sin(np.pi * ti * (1 - beta) / T)
+                + 4 * beta * ti * np.cos(np.pi * ti * (1 + beta) / T) / T
+            )
+            denominator = (
+                np.pi
+                * ti
+                * (1 - (4 * beta * ti / T) ** 2)
+            )
+            h[i] = (1 / T) * numerator / denominator
+
+    # Energy normalization
+    h = h / np.sqrt(np.sum(h ** 2))
+    return h
 
 # ================== 4th Order Costas Loop ==================
 
@@ -326,10 +366,15 @@ try:
         signals = {}
         signals["Before Sync"] = rx_signal.copy()
 
+        RRC_TAPS = rrc_filter(RRC_BETA, RRC_SPS, RRC_NUM_TAPS)
+
         # 1. Coarse frequency offset correction
         rx_signal = coarse_frequency_sync(rx_signal, fs)
         signals["After Coarse Sync"] = rx_signal.copy()
 
+        rx_signal = np.convolve(rx_signal, RRC_TAPS, mode="same")
+        signals["After RRC Filter"] = rx_signal.copy()
+        
         # 2. Mueller & Muller timing recovery
         rx_signal = mueller_muller_clock_recovery(rx_signal, sps=sps)
         rx_signal = rx_signal[~np.isnan(rx_signal)]
