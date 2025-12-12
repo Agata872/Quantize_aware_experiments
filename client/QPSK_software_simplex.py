@@ -6,7 +6,7 @@
 #
 # GNU Radio Python Flow Graph
 # Title: QPSK_software_simplex
-# GNU Radio version: 3.10.12.0
+# GNU Radio version: 3.10.10.0
 
 from PyQt5 import Qt
 from gnuradio import qtgui
@@ -27,7 +27,6 @@ from gnuradio.eng_arg import eng_float, intx
 from gnuradio import eng_notation
 from gnuradio.filter import pfb
 import sip
-import threading
 
 
 
@@ -54,7 +53,7 @@ class QPSK_software_simplex(gr.top_block, Qt.QWidget):
         self.top_grid_layout = Qt.QGridLayout()
         self.top_layout.addLayout(self.top_grid_layout)
 
-        self.settings = Qt.QSettings("gnuradio/flowgraphs", "QPSK_software_simplex")
+        self.settings = Qt.QSettings("GNU Radio", "QPSK_software_simplex")
 
         try:
             geometry = self.settings.value("geometry")
@@ -62,7 +61,6 @@ class QPSK_software_simplex(gr.top_block, Qt.QWidget):
                 self.restoreGeometry(geometry)
         except BaseException as exc:
             print(f"Qt GUI: Could not restore geometry: {str(exc)}", file=sys.stderr)
-        self.flowgraph_started = threading.Event()
 
         ##################################################
         # Variables
@@ -87,7 +85,7 @@ class QPSK_software_simplex(gr.top_block, Qt.QWidget):
         self.gain_tx = gain_tx = 30
         self.gain_rx = gain_rx = 30
         self.freq_offset = freq_offset = 0
-        self.freq = freq = 1e9
+        self.freq = freq = 920e6
         self.filt_delay = filt_delay = int(1+(taps_per_filt-1)//2)
         self.delay = delay = 32
         self.arity = arity = 4
@@ -224,7 +222,7 @@ class QPSK_software_simplex(gr.top_block, Qt.QWidget):
         self.qtgui_sink_x_1 = qtgui.sink_c(
             1024, #fftsize
             window.WIN_BLACKMAN_hARRIS, #wintype
-            0, #fc
+            freq, #fc
             samp_rate, #bw
             "Tx_Signal", #name
             True, #plotfreq
@@ -415,7 +413,7 @@ class QPSK_software_simplex(gr.top_block, Qt.QWidget):
 
 
     def closeEvent(self, event):
-        self.settings = Qt.QSettings("gnuradio/flowgraphs", "QPSK_software_simplex")
+        self.settings = Qt.QSettings("GNU Radio", "QPSK_software_simplex")
         self.settings.setValue("geometry", self.saveGeometry())
         self.stop()
         self.wait()
@@ -506,7 +504,7 @@ class QPSK_software_simplex(gr.top_block, Qt.QWidget):
     def set_samp_rate(self, samp_rate):
         self.samp_rate = samp_rate
         self.blocks_throttle_0.set_sample_rate(self.samp_rate)
-        self.qtgui_sink_x_1.set_frequency_range(0, self.samp_rate)
+        self.qtgui_sink_x_1.set_frequency_range(self.freq, self.samp_rate)
         self.qtgui_sink_x_1_0.set_frequency_range(0, self.samp_rate)
         self.qtgui_time_sink_x_0.set_samp_rate(self.samp_rate)
 
@@ -561,6 +559,7 @@ class QPSK_software_simplex(gr.top_block, Qt.QWidget):
 
     def set_freq(self, freq):
         self.freq = freq
+        self.qtgui_sink_x_1.set_frequency_range(self.freq, self.samp_rate)
 
     def get_filt_delay(self):
         return self.filt_delay
@@ -591,7 +590,6 @@ def main(top_block_cls=QPSK_software_simplex, options=None):
     tb = top_block_cls()
 
     tb.start()
-    tb.flowgraph_started.set()
 
     tb.show()
 
