@@ -20,7 +20,7 @@ RX_CHANNEL = 0
 
 RX_RATE = 1e6                  # samples per second
 RX_FREQ = 920e6                # Hz
-RX_GAIN = 30                   # dB
+RX_GAIN = 50                   # dB
 RX_BW   = 0                    # 0 = do not set
 
 # -------- Streaming --------
