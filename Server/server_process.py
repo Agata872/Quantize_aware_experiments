@@ -62,7 +62,7 @@ class server_process(gr.top_block):
         # Blocks
         ##################################################
 
-        self.zeromq_push_sink_0 = zeromq.push_sink(gr.sizeof_gr_complex, 1, 'tcp://rpi-t05.local:6001', 100, False, (-1), True)
+        self.zeromq_push_sink_0 = zeromq.push_sink(gr.sizeof_gr_complex, 1, 'tcp://rpi-t05.local:6001', 100, False, (-1), False)
         self.zeromq_push_msg_sink_1_0 = zeromq.push_msg_sink('‘tcp://192.168.10.30:5556’', 100, True)
         self.zeromq_push_msg_sink_1 = zeromq.push_msg_sink('‘tcp://192.168.10.30:5555’', 100, True)
         self.zeromq_pull_source_0 = zeromq.pull_source(gr.sizeof_gr_complex, 1, 'tcp://*:6002', 100, False, (-1), False)
