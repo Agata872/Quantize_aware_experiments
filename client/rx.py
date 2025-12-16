@@ -10,7 +10,7 @@ import uhd
 # =========================================================
 
 # -------- Network --------
-SERVER_IP = "192.168.2.61"     # server hostname / IP
+SERVER_IP = "192.108.2.61"     # server hostname / IP
 ZMQ_PORT_RX = 6002             # server ZMQ PULL (Bind) port
 
 ZMQ_SND_HWM = 50               # ZMQ send queue depth

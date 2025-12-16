@@ -10,7 +10,7 @@ import uhd
 # =========================================================
 
 # -------- Network --------
-SERVER_IP = "192.168.2.61"     # server hostname / IP
+SERVER_IP = "192.108.2.61"     # server hostname / IP
 ZMQ_PORT_TX = 6001             # server ZMQ PUSH (Bind) port
 
 ZMQ_RCV_HWM   = 5              # 小一点：不积压，保持“最新”
