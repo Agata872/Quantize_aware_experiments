@@ -1,6 +1,6 @@
 options:
   parameters:
-    author: Dramco_Tianzheng
+    author: Tianzheng_Miao
     catch_exceptions: 'True'
     category: '[GRC Hier Blocks]'
     cmake_opt: ''
@@ -9,9 +9,9 @@ options:
     description: ''
     gen_cmake: 'On'
     gen_linking: dynamic
-    generate_options: qt_gui
+    generate_options: no_gui
     hier_block_src_path: '.:'
-    id: QPSK_RPI_Tx
+    id: server_process
     max_nouts: '0'
     output_language: python
     placement: (0,0)
@@ -22,7 +22,7 @@ options:
     run_options: prompt
     sizing_mode: fixed
     thread_safe_setters: ''
-    title: QPSK_RPI_Tx
+    title: Mod_Demod_Server
     window_size: (1000,1000)
   states:
     bus_sink: false
@@ -42,7 +42,7 @@ blocks:
     bus_sink: false
     bus_source: false
     bus_structure: null
-    coordinate: [648, 1440.0]
+    coordinate: [520, 784.0]
     rotation: 0
     state: enabled
 - name: d
@@ -66,7 +66,7 @@ blocks:
     bus_sink: false
     bus_source: false
     bus_structure: null
-    coordinate: [752, 1440.0]
+    coordinate: [624, 784.0]
     rotation: 0
     state: enabled
 - name: excess_bw
@@ -90,7 +90,7 @@ blocks:
     bus_sink: false
     bus_source: false
     bus_structure: null
-    coordinate: [784, 464.0]
+    coordinate: [1544, 24.0]
     rotation: 0
     state: enabled
 - name: freq
@@ -138,7 +138,7 @@ blocks:
     bus_sink: false
     bus_source: false
     bus_structure: null
-    coordinate: [1016, 1440.0]
+    coordinate: [888, 784.0]
     rotation: 0
     state: enabled
 - name: qpsk_mg
@@ -170,7 +170,7 @@ blocks:
     bus_sink: false
     bus_source: false
     bus_structure: null
-    coordinate: [408, 1440.0]
+    coordinate: [280, 784.0]
     rotation: 0
     state: enabled
 - name: rrc_taps_tx
@@ -182,7 +182,7 @@ blocks:
     bus_sink: false
     bus_source: false
     bus_structure: null
-    coordinate: [1080, 496.0]
+    coordinate: [1824, 16.0]
     rotation: 0
     state: enabled
 - name: samp_rate
@@ -218,7 +218,7 @@ blocks:
     bus_sink: false
     bus_source: false
     bus_structure: null
-    coordinate: [1336, 496.0]
+    coordinate: [2072, 8.0]
     rotation: 0
     state: true
 - name: taps_1
@@ -230,7 +230,7 @@ blocks:
     bus_sink: false
     bus_source: false
     bus_structure: null
-    coordinate: [1584, 496.0]
+    coordinate: [2304, 16.0]
     rotation: 0
     state: true
 - name: taps_per_filt
@@ -242,7 +242,7 @@ blocks:
     bus_sink: false
     bus_source: false
     bus_structure: null
-    coordinate: [920, 496.0]
+    coordinate: [1664, 16.0]
     rotation: 0
     state: enabled
 - name: timing_loop_bw
@@ -254,7 +254,7 @@ blocks:
     bus_sink: false
     bus_source: false
     bus_structure: null
-    coordinate: [864, 1440.0]
+    coordinate: [736, 784.0]
     rotation: 0
     state: enabled
 - name: variable_adaptive_algorithm_0
@@ -271,7 +271,7 @@ blocks:
     bus_sink: false
     bus_source: false
     bus_structure: null
-    coordinate: [152, 1440.0]
+    coordinate: [24, 784.0]
     rotation: 0
     state: enabled
 - name: analog_random_source_x_0
@@ -348,7 +348,7 @@ blocks:
     bus_sink: false
     bus_source: false
     bus_structure: null
-    coordinate: [2424, 1296.0]
+    coordinate: [2000, 1320.0]
     rotation: 0
     state: enabled
 - name: blocks_throttle_0
@@ -383,7 +383,7 @@ blocks:
     bus_sink: false
     bus_source: false
     bus_structure: null
-    coordinate: [2192, 1308.0]
+    coordinate: [1768, 1332.0]
     rotation: 0
     state: enabled
 - name: channels_channel_model_0
@@ -440,7 +440,7 @@ blocks:
     bus_sink: false
     bus_source: false
     bus_structure: null
-    coordinate: [1912, 1180.0]
+    coordinate: [1488, 1204.0]
     rotation: 180
     state: enabled
 - name: digital_costas_loop_cc_0
@@ -458,7 +458,7 @@ blocks:
     bus_sink: false
     bus_source: false
     bus_structure: null
-    coordinate: [1904, 924.0]
+    coordinate: [1480, 948.0]
     rotation: 0
     state: enabled
 - name: digital_diff_decoder_bb_0_0
@@ -475,7 +475,7 @@ blocks:
     bus_sink: false
     bus_source: false
     bus_structure: null
-    coordinate: [1896, 1296.0]
+    coordinate: [1472, 1320.0]
     rotation: 0
     state: enabled
 - name: digital_diff_encoder_bb_0
@@ -513,7 +513,7 @@ blocks:
     bus_sink: false
     bus_source: false
     bus_structure: null
-    coordinate: [1496, 956.0]
+    coordinate: [1072, 980.0]
     rotation: 0
     state: enabled
 - name: digital_symbol_sync_xx_0
@@ -540,7 +540,7 @@ blocks:
     bus_sink: false
     bus_source: false
     bus_structure: null
-    coordinate: [936, 916.0]
+    coordinate: [512, 940.0]
     rotation: 0
     state: true
 - name: pdu_tagged_stream_to_pdu_0
@@ -574,7 +574,7 @@ blocks:
     bus_sink: false
     bus_source: false
     bus_structure: null
-    coordinate: [2752, 1308.0]
+    coordinate: [2328, 1332.0]
     rotation: 0
     state: enabled
 - name: pfb_arb_resampler_xxx_0
@@ -617,7 +617,7 @@ blocks:
     bus_sink: false
     bus_source: false
     bus_structure: null
-    coordinate: [472, 992.0]
+    coordinate: [32, 1008.0]
     rotation: 0
     state: enabled
 - name: zeromq_push_msg_sink_1
@@ -649,7 +649,7 @@ blocks:
     bus_sink: false
     bus_source: false
     bus_structure: null
-    coordinate: [3096, 1296.0]
+    coordinate: [2672, 1320.0]
     rotation: 0
     state: enabled
 - name: zeromq_push_sink_0
