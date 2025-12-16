@@ -4,7 +4,7 @@ import zmq, time
 ctx = zmq.Context()
 s = ctx.socket(zmq.PULL)
 s.setsockopt(zmq.RCVTIMEO, 1000)  # 1s超时，方便判断有没有数据
-s.connect("tcp://127.0.0.1:6001")  # 如果 probe 跑在 server 本机
+s.connect("tcp://192.168.2.61:6001")  # 如果 probe 跑在 server 本机
 
 count = 0
 t0 = time.time()
