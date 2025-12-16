@@ -85,7 +85,10 @@ def main():
             continue
 
         if n > 0:
-            sock.send(buf[:n].tobytes(), copy=False)
+            try:
+                sock.send(buf[:n].tobytes(), flags=zmq.DONTWAIT, copy=False)
+            except zmq.Again:
+                pass
 
     try:
         cmd2 = uhd.types.StreamCMD(uhd.types.StreamMode.stop_cont)
