@@ -15,7 +15,7 @@ ZMQ_PORT_TX = 6001             # server ZMQ PUSH (Bind) port
 
 ZMQ_RCV_HWM   = 5              # 小一点：不积压，保持“最新”
 ZMQ_RCVTIMEO  = 100            # ms: recv 最多阻塞 100ms，便于 Ctrl+C 生效
-DROP_TO_LATEST = False          # True: 每次尽量丢掉旧包，只发最新的一帧
+DROP_TO_LATEST = True          # True: 每次尽量丢掉旧包，只发最新的一帧
 
 # -------- USRP --------
 TX_CHANNEL = 0
