@@ -4,32 +4,37 @@ import time
 import numpy as np
 import zmq
 import uhd
+from collections import deque
 
 # =========================================================
 # ====================== CONFIG ===========================
 # =========================================================
 
 # -------- Network --------
-SERVER_IP = "192.108.2.61"     # server hostname / IP
-ZMQ_PORT_TX = 6001             # server ZMQ PUSH (Bind) port
+SERVER_IP = "192.108.2.61"
+ZMQ_PORT_TX = 6001
 
-ZMQ_RCV_HWM   = 5              # 小一点：不积压，保持“最新”
-ZMQ_RCVTIMEO  = 100            # ms: recv 最多阻塞 100ms，便于 Ctrl+C 生效
-DROP_TO_LATEST = False          # True: 每次尽量丢掉旧包，只发最新的一帧
+ZMQ_RCV_HWM  = 5
+ZMQ_RCVTIMEO = 100    # ms
 
 # -------- USRP --------
 TX_CHANNEL = 0
-TX_RATE = 1e6
-TX_FREQ = 920e6
-TX_GAIN = 50
-TX_BW   = 0
+TX_RATE    = 1e6
+TX_FREQ    = 920e6
+TX_GAIN    = 50
+TX_BW      = 0
 
 # -------- Streaming --------
 TX_CHUNK_SAMPS = 4096
 
+# -------- Buffering --------
+PREBUFFER_SEC = 0.3     # 300 ms pre-buffer
+MAXBUFFER_SEC = 0.6     # hard limit (drop oldest)
+
 # =========================================================
 
 STOP = False
+
 
 def sig_handler(sig, frame):
     global STOP
@@ -43,8 +48,6 @@ def main():
     # ---------------- ZMQ ----------------
     ctx = zmq.Context.instance()
     sock = ctx.socket(zmq.PULL)
-
-    # 不要积压太多；退出别卡住
     sock.setsockopt(zmq.RCVHWM, ZMQ_RCV_HWM)
     sock.setsockopt(zmq.RCVTIMEO, ZMQ_RCVTIMEO)
     sock.setsockopt(zmq.LINGER, 0)
@@ -59,6 +62,7 @@ def main():
     usrp.set_tx_freq(uhd.types.TuneRequest(TX_FREQ), TX_CHANNEL)
     usrp.set_tx_gain(TX_GAIN, TX_CHANNEL)
     usrp.set_tx_antenna("TX/RX", TX_CHANNEL)
+
     if TX_BW > 0:
         try:
             usrp.set_tx_bandwidth(TX_BW, TX_CHANNEL)
@@ -70,63 +74,80 @@ def main():
     tx_streamer = usrp.get_tx_stream(st_args)
 
     md = uhd.types.TXMetadata()
-    md.start_of_burst = True
-    md.end_of_burst = False
-    md.has_time_spec = False
+    md.start_of_burst = False
+    md.end_of_burst   = False
+    md.has_time_spec  = False
 
-    buf = np.zeros(TX_CHUNK_SAMPS, dtype=np.complex64)
+    # ---------------- FIFO Buffer ----------------
+    prebuffer_samps = int(PREBUFFER_SEC * TX_RATE)
+    maxbuffer_samps = int(MAXBUFFER_SEC * TX_RATE)
+
+    fifo = deque()
+    fifo_samps = 0
+    tx_started = False
+
+    def fifo_push(iq):
+        nonlocal fifo_samps
+        fifo.append(iq)
+        fifo_samps += iq.size
+        while fifo_samps > maxbuffer_samps and fifo:
+            old = fifo.popleft()
+            fifo_samps -= old.size
+
+    def fifo_pop(n):
+        nonlocal fifo_samps
+        out = np.zeros(n, dtype=np.complex64)
+        filled = 0
+        while filled < n and fifo:
+            blk = fifo[0]
+            take = min(n - filled, blk.size)
+            out[filled:filled+take] = blk[:take]
+            filled += take
+            if take == blk.size:
+                fifo.popleft()
+            else:
+                fifo[0] = blk[take:]
+            fifo_samps -= take
+        return out
 
     print("[TX] Streaming started (Ctrl+C to stop)")
 
-    first = True
-    dropped_msgs = 0
-    last_print = time.time()
+    last_report = time.time()
 
     while not STOP:
-        # 1) recv 加超时：不让它无限阻塞，保证能响应 Ctrl+C
+        # Receive ZMQ data
         try:
             data = sock.recv()
+            iq = np.frombuffer(data, dtype=np.complex64)
+            if iq.size > 0:
+                fifo_push(iq)
         except zmq.Again:
-            # 没数据也要回到循环，给信号处理机会
-            continue
+            pass
 
-        # 2) 可选：把队列里“旧的数据包”尽量清空，只保留最新（防延迟堆积）
-        if DROP_TO_LATEST:
-            while True:
-                try:
-                    data = sock.recv(flags=zmq.DONTWAIT)
-                    dropped_msgs += 1
-                except zmq.Again:
-                    break
+        # Wait until prebuffer is filled
+        if not tx_started:
+            if fifo_samps >= prebuffer_samps:
+                md.start_of_burst = True
+                tx_started = True
+                print(f"[TX] Prebuffer filled ({fifo_samps} samples), TX started")
+            else:
+                time.sleep(0.001)
+                continue
 
-        iq = np.frombuffer(data, dtype=np.complex64)
-        if iq.size == 0:
-            continue
+        # Feed UHD continuously
+        out = fifo_pop(TX_CHUNK_SAMPS)
+        tx_streamer.send(out, md)
+        md.start_of_burst = False
 
-        idx = 0
-        while idx < iq.size and not STOP:
-            n = min(TX_CHUNK_SAMPS, iq.size - idx)
-            buf[:n] = iq[idx:idx+n]
-
-            md.start_of_burst = first
-            first = False
-
-            # 3) 发送
-            tx_streamer.send(buf[:n], md)
-            idx += n
-
-        # 打印丢包统计（如果启用了 DROP_TO_LATEST）
+        # Periodic status
         now = time.time()
-        if now - last_print > 2.0:
-            if dropped_msgs:
-                print(f"[TX] Dropped {dropped_msgs} stale ZMQ messages in last 2s (keeping latest)")
-            dropped_msgs = 0
-            last_print = now
+        if now - last_report > 2.0:
+            print(f"[TX] Buffer: {fifo_samps / TX_RATE * 1000:.1f} ms")
+            last_report = now
 
-    # graceful stop：发 EOB
+    # Graceful stop
     try:
         md2 = uhd.types.TXMetadata()
-        md2.start_of_burst = False
         md2.end_of_burst = True
         md2.has_time_spec = False
         tx_streamer.send(np.zeros(0, dtype=np.complex64), md2)
