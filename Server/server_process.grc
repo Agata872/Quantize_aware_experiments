@@ -623,7 +623,7 @@ blocks:
 - name: zeromq_push_msg_sink_1
   id: zeromq_push_msg_sink
   parameters:
-    address: tcp://<192.168.10.30>:5555
+    address: "\u2018tcp://192.168.10.30:5555\u2019"
     affinity: ''
     alias: ''
     bind: 'True'
@@ -639,7 +639,7 @@ blocks:
 - name: zeromq_push_msg_sink_1_0
   id: zeromq_push_msg_sink
   parameters:
-    address: tcp://<192.168.10.30>:5556
+    address: "\u2018tcp://192.168.10.30:5556\u2019"
     affinity: ''
     alias: ''
     bind: 'True'
@@ -655,7 +655,7 @@ blocks:
 - name: zeromq_push_sink_0
   id: zeromq_push_sink
   parameters:
-    address: tcp://<rpi-t05.local>:6001
+    address: '''tcp://rpi-t05.local:6001'''
     affinity: ''
     alias: ''
     bind: 'True'
