@@ -855,8 +855,8 @@ all:
           experiment_role: "usrp"
         T06:
           experiment_role: "usrp"
-        T07:
-          experiment_role: "usrp"
+#        T07:
+#          experiment_role: "usrp"
         # T08:
         #   experiment_role: "usrp"
     All:
