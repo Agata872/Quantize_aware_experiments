@@ -7,7 +7,7 @@
 # GNU Radio Python Flow Graph
 # Title: Mod_Demod_Server
 # Author: Tianzheng_Miao
-# GNU Radio version: 3.10.10.0
+# GNU Radio version: 3.10.12.0
 
 from gnuradio import blocks
 import numpy
@@ -25,14 +25,16 @@ from gnuradio import eng_notation
 from gnuradio import gr, pdu
 from gnuradio import zeromq
 from gnuradio.filter import pfb
+import threading
 
 
 
 
-class server_process(gr.top_block):
+class PC_aided_server_process(gr.top_block):
 
     def __init__(self):
         gr.top_block.__init__(self, "Mod_Demod_Server", catch_exceptions=True)
+        self.flowgraph_started = threading.Event()
 
         ##################################################
         # Variables
@@ -63,9 +65,9 @@ class server_process(gr.top_block):
         ##################################################
 
         self.zeromq_push_sink_0 = zeromq.push_sink(gr.sizeof_gr_complex, 1, 'tcp://*:6001', 100, False, (-1), True)
-        self.zeromq_push_msg_sink_1_0 = zeromq.push_msg_sink('tcp://*:5556', 100, True)
-        self.zeromq_push_msg_sink_1 = zeromq.push_msg_sink('tcp://*:5555', 100, True)
-        self.zeromq_pull_source_0 = zeromq.pull_source(gr.sizeof_gr_complex, 1, 'tcp://*:6002', 100, False, (-1), True)
+        self.zeromq_push_msg_sink_1_0 = zeromq.push_msg_sink('‘tcp://192.168.10.30:5556’', 100, True)
+        self.zeromq_push_msg_sink_1 = zeromq.push_msg_sink('‘tcp://192.168.10.30:5555’', 100, True)
+        self.zeromq_pull_source_0 = zeromq.pull_source(gr.sizeof_gr_complex, 1, 'tcp://*:6002', 100, False, (-1), False)
         self.pfb_arb_resampler_xxx_0 = pfb.arb_resampler_ccf(
             sps,
             taps=rrc_taps_tx,
@@ -99,6 +101,7 @@ class server_process(gr.top_block):
             taps=[1],
             noise_seed=0,
             block_tags=False)
+        self.blocks_unpack_k_bits_bb_0 = blocks.unpack_k_bits_bb(2)
         self.blocks_throttle_0 = blocks.throttle(gr.sizeof_gr_complex*1, samp_rate,True)
         self.blocks_stream_to_tagged_stream_0_0 = blocks.stream_to_tagged_stream(gr.sizeof_char, 1, 1024, "packet_len")
         self.blocks_stream_to_tagged_stream_0 = blocks.stream_to_tagged_stream(gr.sizeof_char, 1, 1024, "packet_len")
@@ -112,16 +115,17 @@ class server_process(gr.top_block):
         self.msg_connect((self.pdu_tagged_stream_to_pdu_0, 'pdus'), (self.zeromq_push_msg_sink_1, 'in'))
         self.msg_connect((self.pdu_tagged_stream_to_pdu_0_0, 'pdus'), (self.zeromq_push_msg_sink_1_0, 'in'))
         self.connect((self.analog_random_source_x_0, 0), (self.blocks_packed_to_unpacked_xx_0, 0))
-        self.connect((self.analog_random_source_x_0, 0), (self.blocks_stream_to_tagged_stream_0_0, 0))
+        self.connect((self.blocks_packed_to_unpacked_xx_0, 0), (self.blocks_stream_to_tagged_stream_0, 0))
         self.connect((self.blocks_packed_to_unpacked_xx_0, 0), (self.digital_diff_encoder_bb_0, 0))
-        self.connect((self.blocks_stream_to_tagged_stream_0, 0), (self.pdu_tagged_stream_to_pdu_0_0, 0))
-        self.connect((self.blocks_stream_to_tagged_stream_0_0, 0), (self.pdu_tagged_stream_to_pdu_0, 0))
+        self.connect((self.blocks_stream_to_tagged_stream_0, 0), (self.pdu_tagged_stream_to_pdu_0, 0))
+        self.connect((self.blocks_stream_to_tagged_stream_0_0, 0), (self.pdu_tagged_stream_to_pdu_0_0, 0))
         self.connect((self.blocks_throttle_0, 0), (self.channels_channel_model_0, 0))
+        self.connect((self.blocks_unpack_k_bits_bb_0, 0), (self.blocks_stream_to_tagged_stream_0_0, 0))
         self.connect((self.channels_channel_model_0, 0), (self.zeromq_push_sink_0, 0))
         self.connect((self.digital_chunks_to_symbols_xx_0, 0), (self.pfb_arb_resampler_xxx_0, 0))
         self.connect((self.digital_constellation_decoder_cb_0, 0), (self.digital_diff_decoder_bb_0_0, 0))
         self.connect((self.digital_costas_loop_cc_0, 0), (self.digital_constellation_decoder_cb_0, 0))
-        self.connect((self.digital_diff_decoder_bb_0_0, 0), (self.blocks_stream_to_tagged_stream_0, 0))
+        self.connect((self.digital_diff_decoder_bb_0_0, 0), (self.blocks_unpack_k_bits_bb_0, 0))
         self.connect((self.digital_diff_encoder_bb_0, 0), (self.digital_chunks_to_symbols_xx_0, 0))
         self.connect((self.digital_linear_equalizer_0, 0), (self.digital_costas_loop_cc_0, 0))
         self.connect((self.digital_symbol_sync_xx_0, 0), (self.digital_linear_equalizer_0, 0))
@@ -262,7 +266,7 @@ class server_process(gr.top_block):
 
 
 
-def main(top_block_cls=server_process, options=None):
+def main(top_block_cls=PC_aided_server_process, options=None):
     tb = top_block_cls()
 
     def sig_handler(sig=None, frame=None):
@@ -275,6 +279,7 @@ def main(top_block_cls=server_process, options=None):
     signal.signal(signal.SIGTERM, sig_handler)
 
     tb.start()
+    tb.flowgraph_started.set()
 
     try:
         input('Press Enter to quit: ')

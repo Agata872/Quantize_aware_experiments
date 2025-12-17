@@ -11,7 +11,7 @@ options:
     gen_linking: dynamic
     generate_options: no_gui
     hier_block_src_path: '.:'
-    id: server_process
+    id: PC_aided_server_process
     max_nouts: '0'
     output_language: python
     placement: (0,0)
@@ -655,7 +655,7 @@ blocks:
 - name: zeromq_push_sink_0
   id: zeromq_push_sink
   parameters:
-    address: '''tcp://rpi-t05.local:6001'''
+    address: tcp://*:6001
     affinity: ''
     alias: ''
     bind: 'True'
@@ -696,4 +696,4 @@ connections:
 
 metadata:
   file_format: 1
-  grc_version: 3.10.10.0
+  grc_version: 3.10.12.0

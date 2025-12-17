@@ -1,6 +1,6 @@
 options:
   parameters:
-    author: tianz
+    author: Tianzheng_Miao
     catch_exceptions: 'True'
     category: '[GRC Hier Blocks]'
     cmake_opt: ''
@@ -11,7 +11,7 @@ options:
     gen_linking: dynamic
     generate_options: qt_gui
     hier_block_src_path: '.:'
-    id: server_process1
+    id: Full_server_process
     max_nouts: '0'
     output_language: python
     placement: (0,0)
@@ -22,7 +22,7 @@ options:
     run_options: prompt
     sizing_mode: fixed
     thread_safe_setters: ''
-    title: server_process1
+    title: Full_server_process
     window_size: (1000,1000)
   states:
     bus_sink: false
@@ -1096,19 +1096,6 @@ blocks:
     coordinate: [2192, 1120.0]
     rotation: 0
     state: enabled
-- name: virtual_sink_0
-  id: virtual_sink
-  parameters:
-    alias: ''
-    comment: ''
-    stream_id: Tx_samples
-  states:
-    bus_sink: false
-    bus_source: false
-    bus_structure: null
-    coordinate: [2272, 160.0]
-    rotation: 0
-    state: true
 - name: zeromq_pull_source_0
   id: zeromq_pull_source
   parameters:
@@ -1164,7 +1151,6 @@ connections:
 - [blocks_throttle_0, '0', channels_channel_model_0, '0']
 - [blocks_unpack_k_bits_bb_0, '0', blocks_char_to_float_0_0, '0']
 - [blocks_unpack_k_bits_bb_0_0, '0', blocks_delay_0, '0']
-- [channels_channel_model_0, '0', virtual_sink_0, '0']
 - [channels_channel_model_0, '0', zeromq_push_sink_0, '0']
 - [digital_chunks_to_symbols_xx_0, '0', pfb_arb_resampler_xxx_0, '0']
 - [digital_constellation_decoder_cb_0, '0', digital_diff_decoder_bb_0_0, '0']
