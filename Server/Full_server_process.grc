@@ -698,6 +698,29 @@ blocks:
     coordinate: [1096, 784.0]
     rotation: 0
     state: enabled
+- name: digital_pfb_clock_sync_xxx_0
+  id: digital_pfb_clock_sync_xxx
+  parameters:
+    affinity: ''
+    alias: ''
+    comment: ''
+    filter_size: nfilts
+    init_phase: nfilts/2
+    loop_bw: timing_loop_bw
+    max_dev: '1.5'
+    maxoutbuf: '0'
+    minoutbuf: '0'
+    osps: '2'
+    sps: sps
+    taps: rrc_taps
+    type: ccf
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [680, 900.0]
+    rotation: 0
+    state: disabled
 - name: digital_symbol_sync_xx_0
   id: digital_symbol_sync_xx
   parameters:
@@ -722,9 +745,9 @@ blocks:
     bus_sink: false
     bus_source: false
     bus_structure: null
-    coordinate: [536, 752.0]
+    coordinate: [592, 700.0]
     rotation: 0
-    state: true
+    state: enabled
 - name: pfb_arb_resampler_xxx_0
   id: pfb_arb_resampler_xxx
   parameters:
@@ -1117,10 +1140,12 @@ connections:
 - [digital_diff_decoder_bb_0_0, '0', blocks_unpack_k_bits_bb_0, '0']
 - [digital_diff_encoder_bb_0, '0', digital_chunks_to_symbols_xx_0, '0']
 - [digital_linear_equalizer_0, '0', digital_costas_loop_cc_0, '0']
+- [digital_pfb_clock_sync_xxx_0, '0', digital_linear_equalizer_0, '0']
 - [digital_symbol_sync_xx_0, '0', digital_linear_equalizer_0, '0']
 - [pfb_arb_resampler_xxx_0, '0', qtgui_sink_x_1, '0']
 - [pfb_arb_resampler_xxx_0, '0', zeromq_push_sink_0, '0']
 - [zeromq_pull_source_0, '0', blocks_complex_to_mag_squared_0, '0']
+- [zeromq_pull_source_0, '0', digital_pfb_clock_sync_xxx_0, '0']
 - [zeromq_pull_source_0, '0', digital_symbol_sync_xx_0, '0']
 - [zeromq_pull_source_0, '0', qtgui_sink_x_1_0, '0']
 
