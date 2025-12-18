@@ -300,7 +300,7 @@ blocks:
   id: variable
   parameters:
     comment: ''
-    value: '250000'
+    value: '200000'
   states:
     bus_sink: false
     bus_source: false
@@ -553,27 +553,6 @@ blocks:
     bus_source: false
     bus_structure: null
     coordinate: [384, 1248.0]
-    rotation: 0
-    state: enabled
-- name: channels_channel_model_0
-  id: channels_channel_model
-  parameters:
-    affinity: ''
-    alias: ''
-    block_tags: 'False'
-    comment: ''
-    epsilon: '1'
-    freq_offset: freq_offset
-    maxoutbuf: '0'
-    minoutbuf: '0'
-    noise_voltage: noise_volt
-    seed: '0'
-    taps: '1'
-  states:
-    bus_sink: false
-    bus_source: false
-    bus_structure: null
-    coordinate: [1960, 312.0]
     rotation: 0
     state: enabled
 - name: controls
@@ -1116,7 +1095,7 @@ blocks:
     bus_sink: false
     bus_source: false
     bus_structure: null
-    coordinate: [2304, 336.0]
+    coordinate: [1664, 332.0]
     rotation: 0
     state: enabled
 
@@ -1131,7 +1110,6 @@ connections:
 - [blocks_packed_to_unpacked_xx_0, '0', digital_diff_encoder_bb_0, '0']
 - [blocks_unpack_k_bits_bb_0, '0', blocks_char_to_float_0_0, '0']
 - [blocks_unpack_k_bits_bb_0_0, '0', blocks_delay_0, '0']
-- [channels_channel_model_0, '0', zeromq_push_sink_0, '0']
 - [digital_chunks_to_symbols_xx_0, '0', pfb_arb_resampler_xxx_0, '0']
 - [digital_constellation_decoder_cb_0, '0', digital_diff_decoder_bb_0_0, '0']
 - [digital_costas_loop_cc_0, '0', digital_constellation_decoder_cb_0, '0']
@@ -1140,8 +1118,8 @@ connections:
 - [digital_diff_encoder_bb_0, '0', digital_chunks_to_symbols_xx_0, '0']
 - [digital_linear_equalizer_0, '0', digital_costas_loop_cc_0, '0']
 - [digital_symbol_sync_xx_0, '0', digital_linear_equalizer_0, '0']
-- [pfb_arb_resampler_xxx_0, '0', channels_channel_model_0, '0']
 - [pfb_arb_resampler_xxx_0, '0', qtgui_sink_x_1, '0']
+- [pfb_arb_resampler_xxx_0, '0', zeromq_push_sink_0, '0']
 - [zeromq_pull_source_0, '0', blocks_complex_to_mag_squared_0, '0']
 - [zeromq_pull_source_0, '0', digital_symbol_sync_xx_0, '0']
 - [zeromq_pull_source_0, '0', qtgui_sink_x_1_0, '0']

@@ -14,11 +14,10 @@ from gnuradio import qtgui
 from PyQt5 import QtCore
 from gnuradio import blocks
 import numpy
-from gnuradio import channels
-from gnuradio.filter import firdes
 from gnuradio import digital
 from gnuradio import filter
 from gnuradio import gr
+from gnuradio.filter import firdes
 from gnuradio.fft import window
 import sys
 import signal
@@ -79,7 +78,7 @@ class Full_server_process(gr.top_block, Qt.QWidget):
         self.timing_loop_bw = timing_loop_bw = 6.28/200
         self.taps_1 = taps_1 = [1,0,0,0.5]
         self.taps = taps = [0.825,0,0,0,0.526]
-        self.samp_rate = samp_rate = 250000
+        self.samp_rate = samp_rate = 200000
         self.rrc_taps_tx = rrc_taps_tx = firdes.root_raised_cosine(nfilts, nfilts, 1.0, excess_bw, 11*sps*nfilts)
         self.rrc_taps = rrc_taps = firdes.root_raised_cosine(nfilts, nfilts, 1.0/float(sps), excess_bw, 11*sps*nfilts)
         self.phase_bw = phase_bw = 6.28/200
@@ -126,20 +125,6 @@ class Full_server_process(gr.top_block, Qt.QWidget):
             self.controls_grid_layout_1.setRowStretch(r, 1)
         for c in range(1, 2):
             self.controls_grid_layout_1.setColumnStretch(c, 1)
-        self._noise_volt_range = qtgui.Range(0, 2, 0.01, 0, 200)
-        self._noise_volt_win = qtgui.RangeWidget(self._noise_volt_range, self.set_noise_volt, "Noise Voltage", "counter_slider", float, QtCore.Qt.Horizontal)
-        self.controls_grid_layout_0.addWidget(self._noise_volt_win, 1, 0, 1, 1)
-        for r in range(1, 2):
-            self.controls_grid_layout_0.setRowStretch(r, 1)
-        for c in range(0, 1):
-            self.controls_grid_layout_0.setColumnStretch(c, 1)
-        self._freq_offset_range = qtgui.Range(-0.1, 0.1, 0.001, 0, 200)
-        self._freq_offset_win = qtgui.RangeWidget(self._freq_offset_range, self.set_freq_offset, "Frequency Offset", "counter_slider", float, QtCore.Qt.Horizontal)
-        self.controls_grid_layout_0.addWidget(self._freq_offset_win, 1, 1, 1, 1)
-        for r in range(1, 2):
-            self.controls_grid_layout_0.setRowStretch(r, 1)
-        for c in range(1, 2):
-            self.controls_grid_layout_0.setColumnStretch(c, 1)
         self._delay_range = qtgui.Range(0, 200, 1, 32, 200)
         self._delay_win = qtgui.RangeWidget(self._delay_range, self.set_delay, "Delay", "counter_slider", int, QtCore.Qt.Horizontal)
         self.controls_grid_layout_0.addWidget(self._delay_win, 0, 1, 1, 1)
@@ -329,6 +314,13 @@ class Full_server_process(gr.top_block, Qt.QWidget):
             flt_size=nfilts,
             atten=100)
         self.pfb_arb_resampler_xxx_0.declare_sample_delay(0)
+        self._noise_volt_range = qtgui.Range(0, 2, 0.01, 0, 200)
+        self._noise_volt_win = qtgui.RangeWidget(self._noise_volt_range, self.set_noise_volt, "Noise Voltage", "counter_slider", float, QtCore.Qt.Horizontal)
+        self.controls_grid_layout_0.addWidget(self._noise_volt_win, 1, 0, 1, 1)
+        for r in range(1, 2):
+            self.controls_grid_layout_0.setRowStretch(r, 1)
+        for c in range(0, 1):
+            self.controls_grid_layout_0.setColumnStretch(c, 1)
         self._gain_tx_range = qtgui.Range(0, 74, 1, 40, 200)
         self._gain_tx_win = qtgui.RangeWidget(self._gain_tx_range, self.set_gain_tx, "gain_tx", "counter_slider", float, QtCore.Qt.Horizontal)
         self.controls_grid_layout_0.addWidget(self._gain_tx_win, 0, 0, 1, 1)
@@ -343,6 +335,13 @@ class Full_server_process(gr.top_block, Qt.QWidget):
             self.controls_grid_layout_1.setRowStretch(r, 1)
         for c in range(0, 1):
             self.controls_grid_layout_1.setColumnStretch(c, 1)
+        self._freq_offset_range = qtgui.Range(-0.1, 0.1, 0.001, 0, 200)
+        self._freq_offset_win = qtgui.RangeWidget(self._freq_offset_range, self.set_freq_offset, "Frequency Offset", "counter_slider", float, QtCore.Qt.Horizontal)
+        self.controls_grid_layout_0.addWidget(self._freq_offset_win, 1, 1, 1, 1)
+        for r in range(1, 2):
+            self.controls_grid_layout_0.setRowStretch(r, 1)
+        for c in range(1, 2):
+            self.controls_grid_layout_0.setColumnStretch(c, 1)
         self._eq_gain_range = qtgui.Range(0.0, 0.001, 0.0001, 0.0001, 200)
         self._eq_gain_win = qtgui.RangeWidget(self._eq_gain_range, self.set_eq_gain, "Equalizer: rate", "counter_slider", float, QtCore.Qt.Horizontal)
         self.controls_grid_layout_1.addWidget(self._eq_gain_win, 1, 0, 1, 1)
@@ -368,13 +367,6 @@ class Full_server_process(gr.top_block, Qt.QWidget):
         self.digital_costas_loop_cc_0 = digital.costas_loop_cc(phase_bw, arity, False)
         self.digital_constellation_decoder_cb_0 = digital.constellation_decoder_cb(qpsk_mg.base())
         self.digital_chunks_to_symbols_xx_0 = digital.chunks_to_symbols_bc(qpsk_mg.points(), 1)
-        self.channels_channel_model_0 = channels.channel_model(
-            noise_voltage=noise_volt,
-            frequency_offset=freq_offset,
-            epsilon=1,
-            taps=[1],
-            noise_seed=0,
-            block_tags=False)
         self.blocks_unpack_k_bits_bb_0_0 = blocks.unpack_k_bits_bb(8)
         self.blocks_unpack_k_bits_bb_0 = blocks.unpack_k_bits_bb(2)
         self.blocks_packed_to_unpacked_xx_0 = blocks.packed_to_unpacked_bb(2, gr.GR_MSB_FIRST)
@@ -399,7 +391,6 @@ class Full_server_process(gr.top_block, Qt.QWidget):
         self.connect((self.blocks_packed_to_unpacked_xx_0, 0), (self.digital_diff_encoder_bb_0, 0))
         self.connect((self.blocks_unpack_k_bits_bb_0, 0), (self.blocks_char_to_float_0_0, 0))
         self.connect((self.blocks_unpack_k_bits_bb_0_0, 0), (self.blocks_delay_0, 0))
-        self.connect((self.channels_channel_model_0, 0), (self.zeromq_push_sink_0, 0))
         self.connect((self.digital_chunks_to_symbols_xx_0, 0), (self.pfb_arb_resampler_xxx_0, 0))
         self.connect((self.digital_constellation_decoder_cb_0, 0), (self.digital_diff_decoder_bb_0_0, 0))
         self.connect((self.digital_costas_loop_cc_0, 0), (self.digital_constellation_decoder_cb_0, 0))
@@ -408,8 +399,8 @@ class Full_server_process(gr.top_block, Qt.QWidget):
         self.connect((self.digital_diff_encoder_bb_0, 0), (self.digital_chunks_to_symbols_xx_0, 0))
         self.connect((self.digital_linear_equalizer_0, 0), (self.digital_costas_loop_cc_0, 0))
         self.connect((self.digital_symbol_sync_xx_0, 0), (self.digital_linear_equalizer_0, 0))
-        self.connect((self.pfb_arb_resampler_xxx_0, 0), (self.channels_channel_model_0, 0))
         self.connect((self.pfb_arb_resampler_xxx_0, 0), (self.qtgui_sink_x_1, 0))
+        self.connect((self.pfb_arb_resampler_xxx_0, 0), (self.zeromq_push_sink_0, 0))
         self.connect((self.zeromq_pull_source_0, 0), (self.blocks_complex_to_mag_squared_0, 0))
         self.connect((self.zeromq_pull_source_0, 0), (self.digital_symbol_sync_xx_0, 0))
         self.connect((self.zeromq_pull_source_0, 0), (self.qtgui_sink_x_1_0, 0))
@@ -535,7 +526,6 @@ class Full_server_process(gr.top_block, Qt.QWidget):
 
     def set_noise_volt(self, noise_volt):
         self.noise_volt = noise_volt
-        self.channels_channel_model_0.set_noise_voltage(self.noise_volt)
 
     def get_gain_tx(self):
         return self.gain_tx
@@ -554,7 +544,6 @@ class Full_server_process(gr.top_block, Qt.QWidget):
 
     def set_freq_offset(self, freq_offset):
         self.freq_offset = freq_offset
-        self.channels_channel_model_0.set_frequency_offset(self.freq_offset)
 
     def get_freq(self):
         return self.freq
