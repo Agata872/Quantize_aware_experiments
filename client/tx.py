@@ -28,8 +28,8 @@ TX_BW      = 0
 TX_CHUNK_SAMPS = 4096
 
 # -------- Buffering --------
-PREBUFFER_SEC = 0.2      # 200 ms pre-buffer
-MAXBUFFER_SEC = 0.6        # hard limit (drop oldest)
+PREBUFFER_SEC = 0.1      # 200 ms pre-buffer
+MAXBUFFER_SEC = 0.5        # hard limit (drop oldest)
 
 # =========================================================
 
