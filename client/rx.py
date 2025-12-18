@@ -18,7 +18,7 @@ ZMQ_SND_HWM = 50               # ZMQ send queue depth
 # -------- USRP --------
 RX_CHANNEL = 0
 
-RX_RATE = 250000                  # samples per second
+RX_RATE = 1000000                  # samples per second
 RX_FREQ = 920e6                # Hz
 RX_GAIN = 50                   # dB
 RX_BW   = 0                    # 0 = do not set
