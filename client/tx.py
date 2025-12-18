@@ -146,7 +146,9 @@ def main():
 
         # Feed UHD continuously
         out = fifo_pop(TX_CHUNK_SAMPS)
-        tx_streamer.send(out, md)
+        nsent = tx_streamer.send(out, md)
+        if nsent != len(out):
+            print(f"[TX][WARN] send partial: {nsent}/{len(out)}")
         md.start_of_burst = False
 
         # Periodic status
