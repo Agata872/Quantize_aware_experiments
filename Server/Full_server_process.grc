@@ -523,25 +523,6 @@ blocks:
     coordinate: [264, 344.0]
     rotation: 0
     state: enabled
-- name: blocks_throttle_0
-  id: blocks_throttle
-  parameters:
-    affinity: ''
-    alias: ''
-    comment: ''
-    ignoretag: 'True'
-    maxoutbuf: '0'
-    minoutbuf: '0'
-    samples_per_second: samp_rate
-    type: complex
-    vlen: '1'
-  states:
-    bus_sink: false
-    bus_source: false
-    bus_structure: null
-    coordinate: [1640, 368.0]
-    rotation: 0
-    state: enabled
 - name: blocks_unpack_k_bits_bb_0
   id: blocks_unpack_k_bits_bb
   parameters:
@@ -1148,7 +1129,6 @@ connections:
 - [blocks_delay_0, '0', blocks_char_to_float_0_0_0, '0']
 - [blocks_moving_average_xx_0, '0', qtgui_number_sink_0, '0']
 - [blocks_packed_to_unpacked_xx_0, '0', digital_diff_encoder_bb_0, '0']
-- [blocks_throttle_0, '0', channels_channel_model_0, '0']
 - [blocks_unpack_k_bits_bb_0, '0', blocks_char_to_float_0_0, '0']
 - [blocks_unpack_k_bits_bb_0_0, '0', blocks_delay_0, '0']
 - [channels_channel_model_0, '0', zeromq_push_sink_0, '0']
@@ -1160,7 +1140,7 @@ connections:
 - [digital_diff_encoder_bb_0, '0', digital_chunks_to_symbols_xx_0, '0']
 - [digital_linear_equalizer_0, '0', digital_costas_loop_cc_0, '0']
 - [digital_symbol_sync_xx_0, '0', digital_linear_equalizer_0, '0']
-- [pfb_arb_resampler_xxx_0, '0', blocks_throttle_0, '0']
+- [pfb_arb_resampler_xxx_0, '0', channels_channel_model_0, '0']
 - [pfb_arb_resampler_xxx_0, '0', qtgui_sink_x_1, '0']
 - [zeromq_pull_source_0, '0', blocks_complex_to_mag_squared_0, '0']
 - [zeromq_pull_source_0, '0', digital_symbol_sync_xx_0, '0']
