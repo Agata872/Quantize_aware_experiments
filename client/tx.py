@@ -162,7 +162,7 @@ def main():
                 f"[TX][STAT] arrive={arrive_rate:8.0f} samp/s "
                 f"({arrive_mbps:5.2f} Mbps) | "
                 f"buffer={buffer_ms:6.1f} ms"
-                f"[TX] actual_tx_rate =", usrp.get_tx_rate(TX_CHANNEL)"
+                f"[TX] actual_tx_rate ={usrp.get_tx_rate(TX_CHANNEL)}"
             )
 
             rx_samps = 0
