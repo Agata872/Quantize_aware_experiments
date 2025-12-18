@@ -15,7 +15,7 @@ SERVER_IP = "192.108.2.61"
 ZMQ_PORT_TX = 6001
 
 ZMQ_RCV_HWM  = 100
-ZMQ_RCVTIMEO = 100    # ms
+ZMQ_RCVTIMEO = 100    # ms (kept, but we will use NOBLOCK drain)
 
 # -------- USRP --------
 TX_CHANNEL = 0
@@ -28,8 +28,8 @@ TX_BW      = 0
 TX_CHUNK_SAMPS = 4096
 
 # -------- Buffering --------
-PREBUFFER_SEC = 0.2      # 300 ms pre-buffer
-MAXBUFFER_SEC = 1     # hard limit (drop oldest)
+PREBUFFER_SEC = 0.2      # 200 ms pre-buffer
+MAXBUFFER_SEC = 1        # hard limit (drop oldest)
 
 # =========================================================
 
@@ -42,12 +42,13 @@ def sig_handler(sig, frame):
 
 
 def main():
-    tx_samps = 0
     rx_samps = 0
     rx_bytes = 0
+    tx_samps = 0  # [CHANGED] count actual samples accepted by UHD send()
+
     t_rx_start = time.time()
     last_rx_report = t_rx_start
-    
+
     signal.signal(signal.SIGINT, sig_handler)
     signal.signal(signal.SIGTERM, sig_handler)
 
@@ -118,22 +119,23 @@ def main():
 
     print("[TX] Streaming started (Ctrl+C to stop)")
 
-    last_report = time.time()
-
     while not STOP:
-        # Receive ZMQ data
-        try:
-            data = sock.recv()
-            iq = np.frombuffer(data, dtype=np.complex64)
-            if iq.size > 0:
-                fifo_push(iq)
+        # =====================================================
+        # [CHANGED] Drain ALL available ZMQ messages each loop
+        # =====================================================
+        while True:
+            try:
+                data = sock.recv(flags=zmq.NOBLOCK)
+                iq = np.frombuffer(data, dtype=np.complex64)
+                if iq.size > 0:
+                    fifo_push(iq)
 
-                # ====== 统计到达速率 ======
-                rx_samps += iq.size
-                rx_bytes += len(data)
-        except zmq.Again:
-            pass
-
+                    # ====== 统计到达速率 ======
+                    rx_samps += iq.size
+                    rx_bytes += len(data)
+            except zmq.Again:
+                break
+        # =====================================================
 
         # Wait until prebuffer is filled
         if not tx_started:
@@ -148,9 +150,12 @@ def main():
         # Feed UHD continuously
         out = fifo_pop(TX_CHUNK_SAMPS)
         nsent = tx_streamer.send(out, md)
+
+        # [CHANGED] warn if partial (you already tested, keep it)
         if nsent != len(out):
             print(f"[TX][WARN] send partial: {nsent}/{len(out)}")
-        tx_samps += nsent
+
+        tx_samps += nsent  # [CHANGED] accumulate true send count
         md.start_of_burst = False
 
         # Periodic status
@@ -159,10 +164,11 @@ def main():
             dt = now - last_rx_report
 
             arrive_rate = rx_samps / dt
-            send_rate   = tx_samps / dt
-            delta       = arrive_rate - send_rate  # 正数=进得多，负数=出得多
-
             arrive_mbps = (rx_bytes * 8) / dt / 1e6
+
+            send_rate = tx_samps / dt
+            delta = arrive_rate - send_rate  # +: buffer grows, -: buffer shrinks
+
             buffer_ms = fifo_samps / TX_RATE * 1000
 
             print(
@@ -170,7 +176,8 @@ def main():
                 f"txsend={send_rate:8.0f} samp/s "
                 f"delta={delta:7.0f} | "
                 f"({arrive_mbps:5.2f} Mbps) | "
-                f"buffer={buffer_ms:6.1f} ms"
+                f"buffer={buffer_ms:6.1f} ms "
+                f"| actual_tx_rate={usrp.get_tx_rate(TX_CHANNEL):.0f}"
             )
 
             rx_samps = 0
