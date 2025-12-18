@@ -42,6 +42,11 @@ def sig_handler(sig, frame):
 
 
 def main():
+    rx_samps = 0
+    rx_bytes = 0
+    t_rx_start = time.time()
+    last_rx_report = t_rx_start
+
     signal.signal(signal.SIGINT, sig_handler)
     signal.signal(signal.SIGTERM, sig_handler)
 
@@ -116,13 +121,17 @@ def main():
 
     while not STOP:
         # Receive ZMQ data
-        try:
-            data = sock.recv()
-            iq = np.frombuffer(data, dtype=np.complex64)
-            if iq.size > 0:
-                fifo_push(iq)
-        except zmq.Again:
-            pass
+    try:
+        data = sock.recv()
+        iq = np.frombuffer(data, dtype=np.complex64)
+        if iq.size > 0:
+            fifo_push(iq)
+
+            # ====== 统计到达速率 ======
+            rx_samps += iq.size
+            rx_bytes += len(data)
+    except zmq.Again:
+        pass
 
         # Wait until prebuffer is filled
         if not tx_started:
