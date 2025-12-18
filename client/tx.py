@@ -42,6 +42,7 @@ def sig_handler(sig, frame):
 
 
 def main():
+    tx_samps = 0
     rx_samps = 0
     rx_bytes = 0
     t_rx_start = time.time()
@@ -149,6 +150,7 @@ def main():
         nsent = tx_streamer.send(out, md)
         if nsent != len(out):
             print(f"[TX][WARN] send partial: {nsent}/{len(out)}")
+        tx_samps += nsent
         md.start_of_burst = False
 
         # Periodic status
@@ -157,18 +159,23 @@ def main():
             dt = now - last_rx_report
 
             arrive_rate = rx_samps / dt
+            send_rate   = tx_samps / dt
+            delta       = arrive_rate - send_rate  # 正数=进得多，负数=出得多
+
             arrive_mbps = (rx_bytes * 8) / dt / 1e6
             buffer_ms = fifo_samps / TX_RATE * 1000
 
             print(
                 f"[TX][STAT] arrive={arrive_rate:8.0f} samp/s "
+                f"txsend={send_rate:8.0f} samp/s "
+                f"delta={delta:7.0f} | "
                 f"({arrive_mbps:5.2f} Mbps) | "
                 f"buffer={buffer_ms:6.1f} ms"
-                f"[TX] actual_tx_rate ={usrp.get_tx_rate(TX_CHANNEL)}"
             )
 
             rx_samps = 0
             rx_bytes = 0
+            tx_samps = 0
             last_rx_report = now
 
     # Graceful stop
