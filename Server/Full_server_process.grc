@@ -54,7 +54,7 @@ blocks:
     bus_sink: false
     bus_source: false
     bus_structure: null
-    coordinate: [976, 16.0]
+    coordinate: [624, 4.0]
     rotation: 0
     state: enabled
 - name: delay
@@ -69,7 +69,7 @@ blocks:
     start: '0'
     step: '1'
     stop: '200'
-    value: '32'
+    value: '0'
     widget: counter_slider
   states:
     bus_sink: false
@@ -108,7 +108,7 @@ blocks:
     bus_sink: false
     bus_source: false
     bus_structure: null
-    coordinate: [824, 16.0]
+    coordinate: [528, 4.0]
     rotation: 0
     state: enabled
 - name: filt_delay
@@ -120,7 +120,7 @@ blocks:
     bus_sink: false
     bus_source: false
     bus_structure: null
-    coordinate: [448, 480.0]
+    coordinate: [640, 76.0]
     rotation: 0
     state: enabled
 - name: freq
@@ -132,7 +132,7 @@ blocks:
     bus_sink: false
     bus_source: false
     bus_structure: null
-    coordinate: [504, 16.0]
+    coordinate: [360, 4.0]
     rotation: 0
     state: enabled
 - name: freq_offset
@@ -153,7 +153,7 @@ blocks:
     bus_sink: false
     bus_source: false
     bus_structure: null
-    coordinate: [1584, 8.0]
+    coordinate: [1056, 12.0]
     rotation: 0
     state: enabled
 - name: gain_rx
@@ -174,7 +174,7 @@ blocks:
     bus_sink: false
     bus_source: false
     bus_structure: null
-    coordinate: [1800, 8.0]
+    coordinate: [1208, 12.0]
     rotation: 0
     state: enabled
 - name: gain_tx
@@ -195,7 +195,7 @@ blocks:
     bus_sink: false
     bus_source: false
     bus_structure: null
-    coordinate: [1968, 8.0]
+    coordinate: [1328, 12.0]
     rotation: 0
     state: enabled
 - name: nfilts
@@ -207,7 +207,7 @@ blocks:
     bus_sink: false
     bus_source: false
     bus_structure: null
-    coordinate: [680, 16.0]
+    coordinate: [456, 4.0]
     rotation: 0
     state: enabled
 - name: noise_volt
@@ -228,7 +228,7 @@ blocks:
     bus_sink: false
     bus_source: false
     bus_structure: null
-    coordinate: [1408, 8.0]
+    coordinate: [920, 12.0]
     rotation: 0
     state: enabled
 - name: phase_bw
@@ -269,7 +269,7 @@ blocks:
     bus_sink: false
     bus_source: false
     bus_structure: null
-    coordinate: [1160, 16.0]
+    coordinate: [744, 4.0]
     rotation: 0
     state: enabled
 - name: rrc_taps
@@ -305,7 +305,7 @@ blocks:
     bus_sink: false
     bus_source: false
     bus_structure: null
-    coordinate: [224, 16.0]
+    coordinate: [184, 4.0]
     rotation: 0
     state: enabled
 - name: sps
@@ -317,7 +317,7 @@ blocks:
     bus_sink: false
     bus_source: false
     bus_structure: null
-    coordinate: [368, 16.0]
+    coordinate: [288, 4.0]
     rotation: 0
     state: enabled
 - name: taps
@@ -391,7 +391,7 @@ blocks:
     bus_sink: false
     bus_source: false
     bus_structure: null
-    coordinate: [2336, 8.0]
+    coordinate: [1592, 12.0]
     rotation: 0
     state: enabled
 - name: analog_random_source_x_0
@@ -586,7 +586,7 @@ blocks:
     bus_sink: false
     bus_source: false
     bus_structure: null
-    coordinate: [2144, 8.0]
+    coordinate: [1456, 12.0]
     rotation: 0
     state: enabled
 - name: digital_chunks_to_symbols_xx_0

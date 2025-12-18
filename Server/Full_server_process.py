@@ -88,7 +88,7 @@ class Full_server_process(gr.top_block, Qt.QWidget):
         self.freq_offset = freq_offset = 0
         self.freq = freq = 920e6
         self.filt_delay = filt_delay = int(1+(taps_per_filt-1)//2)
-        self.delay = delay = 32
+        self.delay = delay = 0
         self.arity = arity = 4
 
         ##################################################
@@ -125,7 +125,7 @@ class Full_server_process(gr.top_block, Qt.QWidget):
             self.controls_grid_layout_1.setRowStretch(r, 1)
         for c in range(1, 2):
             self.controls_grid_layout_1.setColumnStretch(c, 1)
-        self._delay_range = qtgui.Range(0, 200, 1, 32, 200)
+        self._delay_range = qtgui.Range(0, 200, 1, 0, 200)
         self._delay_win = qtgui.RangeWidget(self._delay_range, self.set_delay, "Delay", "counter_slider", int, QtCore.Qt.Horizontal)
         self.controls_grid_layout_0.addWidget(self._delay_win, 0, 1, 1, 1)
         for r in range(0, 1):
