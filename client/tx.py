@@ -19,7 +19,7 @@ ZMQ_RCVTIMEO = 100    # ms
 
 # -------- USRP --------
 TX_CHANNEL = 0
-TX_RATE    = 1e6
+TX_RATE    = 250000
 TX_FREQ    = 920e6
 TX_GAIN    = 50
 TX_BW      = 0

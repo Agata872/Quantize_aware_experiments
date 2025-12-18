@@ -7,7 +7,7 @@
 # GNU Radio Python Flow Graph
 # Title: Full_server_process
 # Author: Tianzheng_Miao
-# GNU Radio version: 3.10.12.0
+# GNU Radio version: 3.10.9.2
 
 from PyQt5 import Qt
 from gnuradio import qtgui
@@ -29,7 +29,6 @@ from gnuradio import eng_notation
 from gnuradio import zeromq
 from gnuradio.filter import pfb
 import sip
-import threading
 
 
 
@@ -56,7 +55,7 @@ class Full_server_process(gr.top_block, Qt.QWidget):
         self.top_grid_layout = Qt.QGridLayout()
         self.top_layout.addLayout(self.top_grid_layout)
 
-        self.settings = Qt.QSettings("gnuradio/flowgraphs", "Full_server_process")
+        self.settings = Qt.QSettings("GNU Radio", "Full_server_process")
 
         try:
             geometry = self.settings.value("geometry")
@@ -64,7 +63,6 @@ class Full_server_process(gr.top_block, Qt.QWidget):
                 self.restoreGeometry(geometry)
         except BaseException as exc:
             print(f"Qt GUI: Could not restore geometry: {str(exc)}", file=sys.stderr)
-        self.flowgraph_started = threading.Event()
 
         ##################################################
         # Variables
@@ -81,7 +79,7 @@ class Full_server_process(gr.top_block, Qt.QWidget):
         self.timing_loop_bw = timing_loop_bw = 6.28/200
         self.taps_1 = taps_1 = [1,0,0,0.5]
         self.taps = taps = [0.825,0,0,0,0.526]
-        self.samp_rate = samp_rate = 1000000
+        self.samp_rate = samp_rate = 250000
         self.rrc_taps_tx = rrc_taps_tx = firdes.root_raised_cosine(nfilts, nfilts, 1.0, excess_bw, 11*sps*nfilts)
         self.rrc_taps = rrc_taps = firdes.root_raised_cosine(nfilts, nfilts, 1.0/float(sps), excess_bw, 11*sps*nfilts)
         self.phase_bw = phase_bw = 6.28/200
@@ -420,7 +418,7 @@ class Full_server_process(gr.top_block, Qt.QWidget):
 
 
     def closeEvent(self, event):
-        self.settings = Qt.QSettings("gnuradio/flowgraphs", "Full_server_process")
+        self.settings = Qt.QSettings("GNU Radio", "Full_server_process")
         self.settings.setValue("geometry", self.saveGeometry())
         self.stop()
         self.wait()
@@ -598,7 +596,6 @@ def main(top_block_cls=Full_server_process, options=None):
     tb = top_block_cls()
 
     tb.start()
-    tb.flowgraph_started.set()
 
     tb.show()
 
