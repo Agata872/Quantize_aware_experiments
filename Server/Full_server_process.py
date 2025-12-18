@@ -79,7 +79,7 @@ class Full_server_process(gr.top_block, Qt.QWidget):
         self.timing_loop_bw = timing_loop_bw = 6.28/200
         self.taps_1 = taps_1 = [1,0,0,0.5]
         self.taps = taps = [0.825,0,0,0,0.526]
-        self.samp_rate = samp_rate = 1000000
+        self.samp_rate = samp_rate = 250000
         self.rrc_taps_tx = rrc_taps_tx = firdes.root_raised_cosine(nfilts, nfilts, 1.0, excess_bw, 11*sps*nfilts)
         self.rrc_taps = rrc_taps = firdes.root_raised_cosine(nfilts, nfilts, 1.0/float(sps), excess_bw, 11*sps*nfilts)
         self.phase_bw = phase_bw = 6.28/200
