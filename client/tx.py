@@ -14,7 +14,7 @@ from collections import deque
 SERVER_IP = "192.108.2.61"
 ZMQ_PORT_TX = 6001
 
-ZMQ_RCV_HWM  = 1000
+ZMQ_RCV_HWM  = 100
 ZMQ_RCVTIMEO = 100    # ms
 
 # -------- USRP --------
@@ -28,8 +28,8 @@ TX_BW      = 0
 TX_CHUNK_SAMPS = 4096
 
 # -------- Buffering --------
-PREBUFFER_SEC = 0.2      # 300 ms pre-buffer
-MAXBUFFER_SEC = 0.6     # hard limit (drop oldest)
+PREBUFFER_SEC = 1      # 300 ms pre-buffer
+MAXBUFFER_SEC = 3     # hard limit (drop oldest)
 
 # =========================================================
 
