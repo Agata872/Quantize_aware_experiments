@@ -153,11 +153,16 @@ def main():
         now = time.time()
         if now - last_rx_report >= 1.0:
             dt = now - last_rx_report
-            rate_sps = rx_samps / dt
-            rate_mbps = (rx_bytes * 8) / dt / 1e6
 
-            print(f"[TX][RX-IN] arrive_rate = {rate_sps:.0f} samp/s "
-                f"({rate_mbps:.2f} Mbps)")
+            arrive_rate = rx_samps / dt
+            arrive_mbps = (rx_bytes * 8) / dt / 1e6
+            buffer_ms = fifo_samps / TX_RATE * 1000
+
+            print(
+                f"[TX][STAT] arrive={arrive_rate:8.0f} samp/s "
+                f"({arrive_mbps:5.2f} Mbps) | "
+                f"buffer={buffer_ms:6.1f} ms"
+            )
 
             rx_samps = 0
             rx_bytes = 0
