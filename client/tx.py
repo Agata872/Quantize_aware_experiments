@@ -14,7 +14,7 @@ from collections import deque
 SERVER_IP = "192.108.2.61"
 ZMQ_PORT_TX = 6001
 
-ZMQ_RCV_HWM  = 5
+ZMQ_RCV_HWM  = 100
 ZMQ_RCVTIMEO = 100    # ms
 
 # -------- USRP --------
