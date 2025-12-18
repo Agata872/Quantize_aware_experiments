@@ -46,7 +46,7 @@ def main():
     rx_bytes = 0
     t_rx_start = time.time()
     last_rx_report = t_rx_start
-
+    
     signal.signal(signal.SIGINT, sig_handler)
     signal.signal(signal.SIGTERM, sig_handler)
 
@@ -121,17 +121,18 @@ def main():
 
     while not STOP:
         # Receive ZMQ data
-    try:
-        data = sock.recv()
-        iq = np.frombuffer(data, dtype=np.complex64)
-        if iq.size > 0:
-            fifo_push(iq)
+        try:
+            data = sock.recv()
+            iq = np.frombuffer(data, dtype=np.complex64)
+            if iq.size > 0:
+                fifo_push(iq)
 
-            # ====== 统计到达速率 ======
-            rx_samps += iq.size
-            rx_bytes += len(data)
-    except zmq.Again:
-        pass
+                # ====== 统计到达速率 ======
+                rx_samps += iq.size
+                rx_bytes += len(data)
+        except zmq.Again:
+            pass
+
 
         # Wait until prebuffer is filled
         if not tx_started:
@@ -150,9 +151,17 @@ def main():
 
         # Periodic status
         now = time.time()
-        if now - last_report > 2.0:
-            print(f"[TX] Buffer: {fifo_samps / TX_RATE * 1000:.1f} ms")
-            last_report = now
+        if now - last_rx_report >= 1.0:
+            dt = now - last_rx_report
+            rate_sps = rx_samps / dt
+            rate_mbps = (rx_bytes * 8) / dt / 1e6
+
+            print(f"[TX][RX-IN] arrive_rate = {rate_sps:.0f} samp/s "
+                f"({rate_mbps:.2f} Mbps)")
+
+            rx_samps = 0
+            rx_bytes = 0
+            last_rx_report = now
 
     # Graceful stop
     try:
