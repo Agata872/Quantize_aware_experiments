@@ -72,13 +72,13 @@ class Full_server_process(gr.top_block, Qt.QWidget):
         self.taps_per_filt = taps_per_filt = int((11*sps*nfilts)/nfilts)
         self.qpsk_mg = qpsk_mg = digital.constellation_rect([d+d*1j, -d+d*1j,-d-d*1j, d-d*1j], [0, 1, 3, 2],
         4, 2, 2, 1, 1).base()
-        self.excess_bw = excess_bw = 0.35
+        self.excess_bw = excess_bw = 0.95
         self.eq_gain = eq_gain = 0.0001
         self.variable_adaptive_algorithm_0 = variable_adaptive_algorithm_0 = digital.adaptive_algorithm_cma( qpsk_mg, eq_gain, 1).base()
         self.timing_loop_bw = timing_loop_bw = 6.28/200
         self.taps_1 = taps_1 = [1,0,0,0.5]
         self.taps = taps = [0.825,0,0,0,0.526]
-        self.samp_rate = samp_rate = 1000000
+        self.samp_rate = samp_rate = 200000
         self.rrc_taps_tx = rrc_taps_tx = firdes.root_raised_cosine(nfilts, nfilts, 1.0, excess_bw, 11*sps*nfilts)
         self.rrc_taps = rrc_taps = firdes.root_raised_cosine(nfilts, nfilts, 1.0/float(sps), excess_bw, 11*sps*nfilts)
         self.phase_bw = phase_bw = 6.28/200
