@@ -69,7 +69,7 @@ blocks:
     start: '0'
     step: '1'
     stop: '200'
-    value: '0'
+    value: '32'
     widget: counter_slider
   states:
     bus_sink: false
@@ -430,7 +430,7 @@ blocks:
     bus_structure: null
     coordinate: [1976, 1136.0]
     rotation: 0
-    state: enabled
+    state: disabled
 - name: blocks_char_to_float_0_0_0
   id: blocks_char_to_float
   parameters:
@@ -446,6 +446,23 @@ blocks:
     bus_source: false
     bus_structure: null
     coordinate: [1928, 1248.0]
+    rotation: 0
+    state: disabled
+- name: blocks_char_to_float_0_0_1
+  id: blocks_char_to_float
+  parameters:
+    affinity: ''
+    alias: ''
+    comment: ''
+    maxoutbuf: '0'
+    minoutbuf: '0'
+    scale: '1'
+    vlen: '1'
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [2048, 1316.0]
     rotation: 0
     state: enabled
 - name: blocks_complex_to_mag_squared_0
@@ -504,6 +521,26 @@ blocks:
     coordinate: [928, 608.0]
     rotation: 0
     state: true
+- name: blocks_moving_average_xx_1
+  id: blocks_moving_average_xx
+  parameters:
+    affinity: ''
+    alias: ''
+    comment: ''
+    length: '10000'
+    max_iter: '4000'
+    maxoutbuf: '0'
+    minoutbuf: '0'
+    scale: '0.0001'
+    type: float
+    vlen: '1'
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [2256, 1292.0]
+    rotation: 0
+    state: enabled
 - name: blocks_packed_to_unpacked_xx_0
   id: blocks_packed_to_unpacked_xx
   parameters:
@@ -553,6 +590,23 @@ blocks:
     bus_source: false
     bus_structure: null
     coordinate: [384, 1248.0]
+    rotation: 0
+    state: enabled
+- name: blocks_xor_xx_0
+  id: blocks_xor_xx
+  parameters:
+    affinity: ''
+    alias: ''
+    comment: ''
+    maxoutbuf: '0'
+    minoutbuf: '0'
+    num_inputs: '2'
+    type: byte
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [1944, 1304.0]
     rotation: 0
     state: enabled
 - name: controls
@@ -924,6 +978,69 @@ blocks:
     coordinate: [1208, 608.0]
     rotation: 0
     state: true
+- name: qtgui_number_sink_1
+  id: qtgui_number_sink
+  parameters:
+    affinity: ''
+    alias: ''
+    autoscale: 'False'
+    avg: '0'
+    color1: ("black", "black")
+    color10: ("black", "black")
+    color2: ("black", "black")
+    color3: ("black", "black")
+    color4: ("black", "black")
+    color5: ("black", "black")
+    color6: ("black", "black")
+    color7: ("black", "black")
+    color8: ("black", "black")
+    color9: ("black", "black")
+    comment: ''
+    factor1: '1'
+    factor10: '1'
+    factor2: '1'
+    factor3: '1'
+    factor4: '1'
+    factor5: '1'
+    factor6: '1'
+    factor7: '1'
+    factor8: '1'
+    factor9: '1'
+    graph_type: qtgui.NUM_GRAPH_HORIZ
+    gui_hint: 2,1,1,1
+    label1: ''
+    label10: ''
+    label2: ''
+    label3: ''
+    label4: ''
+    label5: ''
+    label6: ''
+    label7: ''
+    label8: ''
+    label9: ''
+    max: '1'
+    min: '-1'
+    name: '""'
+    nconnections: '1'
+    type: float
+    unit1: ''
+    unit10: ''
+    unit2: ''
+    unit3: ''
+    unit4: ''
+    unit5: ''
+    unit6: ''
+    unit7: ''
+    unit8: ''
+    unit9: ''
+    update_time: '0.10'
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [2456, 1292.0]
+    rotation: 0
+    state: enabled
 - name: qtgui_sink_x_1
   id: qtgui_sink_x
   parameters:
@@ -1076,9 +1193,9 @@ blocks:
     bus_sink: false
     bus_source: false
     bus_structure: null
-    coordinate: [2192, 1120.0]
+    coordinate: [2184, 1148.0]
     rotation: 0
-    state: enabled
+    state: disabled
 - name: zeromq_pull_source_0
   id: zeromq_pull_source
   parameters:
@@ -1127,12 +1244,17 @@ connections:
 - [analog_random_source_x_0, '0', blocks_unpack_k_bits_bb_0_0, '0']
 - [blocks_char_to_float_0_0, '0', qtgui_time_sink_x_0, '0']
 - [blocks_char_to_float_0_0_0, '0', qtgui_time_sink_x_0, '1']
+- [blocks_char_to_float_0_0_1, '0', blocks_moving_average_xx_1, '0']
 - [blocks_complex_to_mag_squared_0, '0', blocks_moving_average_xx_0, '0']
 - [blocks_delay_0, '0', blocks_char_to_float_0_0_0, '0']
+- [blocks_delay_0, '0', blocks_xor_xx_0, '0']
 - [blocks_moving_average_xx_0, '0', qtgui_number_sink_0, '0']
+- [blocks_moving_average_xx_1, '0', qtgui_number_sink_1, '0']
 - [blocks_packed_to_unpacked_xx_0, '0', digital_diff_encoder_bb_0, '0']
 - [blocks_unpack_k_bits_bb_0, '0', blocks_char_to_float_0_0, '0']
+- [blocks_unpack_k_bits_bb_0, '0', blocks_xor_xx_0, '1']
 - [blocks_unpack_k_bits_bb_0_0, '0', blocks_delay_0, '0']
+- [blocks_xor_xx_0, '0', blocks_char_to_float_0_0_1, '0']
 - [digital_chunks_to_symbols_xx_0, '0', pfb_arb_resampler_xxx_0, '0']
 - [digital_constellation_decoder_cb_0, '0', digital_diff_decoder_bb_0_0, '0']
 - [digital_costas_loop_cc_0, '0', digital_constellation_decoder_cb_0, '0']

@@ -88,7 +88,7 @@ class Full_server_process(gr.top_block, Qt.QWidget):
         self.freq_offset = freq_offset = 0
         self.freq = freq = 920e6
         self.filt_delay = filt_delay = int(1+(taps_per_filt-1)//2)
-        self.delay = delay = 0
+        self.delay = delay = 32
         self.arity = arity = 4
 
         ##################################################
@@ -125,7 +125,7 @@ class Full_server_process(gr.top_block, Qt.QWidget):
             self.controls_grid_layout_1.setRowStretch(r, 1)
         for c in range(1, 2):
             self.controls_grid_layout_1.setColumnStretch(c, 1)
-        self._delay_range = qtgui.Range(0, 200, 1, 0, 200)
+        self._delay_range = qtgui.Range(0, 200, 1, 32, 200)
         self._delay_win = qtgui.RangeWidget(self._delay_range, self.set_delay, "Delay", "counter_slider", int, QtCore.Qt.Horizontal)
         self.controls_grid_layout_0.addWidget(self._delay_win, 0, 1, 1, 1)
         for r in range(0, 1):
@@ -134,58 +134,6 @@ class Full_server_process(gr.top_block, Qt.QWidget):
             self.controls_grid_layout_0.setColumnStretch(c, 1)
         self.zeromq_push_sink_0 = zeromq.push_sink(gr.sizeof_gr_complex, 1, 'tcp://*:6001', 100, False, (-1), True)
         self.zeromq_pull_source_0 = zeromq.pull_source(gr.sizeof_gr_complex, 1, 'tcp://*:6002', 100, False, (-1), True)
-        self.qtgui_time_sink_x_0 = qtgui.time_sink_f(
-            512, #size
-            samp_rate, #samp_rate
-            "TX_vs_RX_Bits", #name
-            2, #number of inputs
-            None # parent
-        )
-        self.qtgui_time_sink_x_0.set_update_time(0.10)
-        self.qtgui_time_sink_x_0.set_y_axis(-0.5, 1.5)
-
-        self.qtgui_time_sink_x_0.set_y_label('Amplitude', "")
-
-        self.qtgui_time_sink_x_0.enable_tags(True)
-        self.qtgui_time_sink_x_0.set_trigger_mode(qtgui.TRIG_MODE_FREE, qtgui.TRIG_SLOPE_POS, 0.0, 0, 0, "")
-        self.qtgui_time_sink_x_0.enable_autoscale(False)
-        self.qtgui_time_sink_x_0.enable_grid(True)
-        self.qtgui_time_sink_x_0.enable_axis_labels(True)
-        self.qtgui_time_sink_x_0.enable_control_panel(False)
-        self.qtgui_time_sink_x_0.enable_stem_plot(False)
-
-
-        labels = ['RX', 'TX', '', '', '',
-            '', '', '', '', '']
-        widths = [1, 1, 1, 1, 1,
-            1, 1, 1, 1, 1]
-        colors = ['blue', 'red', 'green', 'black', 'cyan',
-            'magenta', 'yellow', 'dark red', 'dark green', 'dark blue']
-        alphas = [1.0, 1.0, 1.0, 1.0, 1.0,
-            1.0, 1.0, 1.0, 1.0, 1.0]
-        styles = [1, 1, 1, 1, 1,
-            1, 1, 1, 1, 1]
-        markers = [-1, -1, -1, -1, -1,
-            -1, -1, -1, -1, -1]
-
-
-        for i in range(2):
-            if len(labels[i]) == 0:
-                self.qtgui_time_sink_x_0.set_line_label(i, "Data {0}".format(i))
-            else:
-                self.qtgui_time_sink_x_0.set_line_label(i, labels[i])
-            self.qtgui_time_sink_x_0.set_line_width(i, widths[i])
-            self.qtgui_time_sink_x_0.set_line_color(i, colors[i])
-            self.qtgui_time_sink_x_0.set_line_style(i, styles[i])
-            self.qtgui_time_sink_x_0.set_line_marker(i, markers[i])
-            self.qtgui_time_sink_x_0.set_line_alpha(i, alphas[i])
-
-        self._qtgui_time_sink_x_0_win = sip.wrapinstance(self.qtgui_time_sink_x_0.qwidget(), Qt.QWidget)
-        self.top_grid_layout.addWidget(self._qtgui_time_sink_x_0_win, 2, 1, 1, 1)
-        for r in range(2, 3):
-            self.top_grid_layout.setRowStretch(r, 1)
-        for c in range(1, 2):
-            self.top_grid_layout.setColumnStretch(c, 1)
         self.qtgui_sink_x_1_0 = qtgui.sink_c(
             1024, #fftsize
             window.WIN_BLACKMAN_hARRIS, #wintype
@@ -229,6 +177,43 @@ class Full_server_process(gr.top_block, Qt.QWidget):
         for r in range(1, 2):
             self.top_grid_layout.setRowStretch(r, 1)
         for c in range(0, 1):
+            self.top_grid_layout.setColumnStretch(c, 1)
+        self.qtgui_number_sink_1 = qtgui.number_sink(
+            gr.sizeof_float,
+            0,
+            qtgui.NUM_GRAPH_HORIZ,
+            1,
+            None # parent
+        )
+        self.qtgui_number_sink_1.set_update_time(0.10)
+        self.qtgui_number_sink_1.set_title("")
+
+        labels = ['', '', '', '', '',
+            '', '', '', '', '']
+        units = ['', '', '', '', '',
+            '', '', '', '', '']
+        colors = [("black", "black"), ("black", "black"), ("black", "black"), ("black", "black"), ("black", "black"),
+            ("black", "black"), ("black", "black"), ("black", "black"), ("black", "black"), ("black", "black")]
+        factor = [1, 1, 1, 1, 1,
+            1, 1, 1, 1, 1]
+
+        for i in range(1):
+            self.qtgui_number_sink_1.set_min(i, -1)
+            self.qtgui_number_sink_1.set_max(i, 1)
+            self.qtgui_number_sink_1.set_color(i, colors[i][0], colors[i][1])
+            if len(labels[i]) == 0:
+                self.qtgui_number_sink_1.set_label(i, "Data {0}".format(i))
+            else:
+                self.qtgui_number_sink_1.set_label(i, labels[i])
+            self.qtgui_number_sink_1.set_unit(i, units[i])
+            self.qtgui_number_sink_1.set_factor(i, factor[i])
+
+        self.qtgui_number_sink_1.enable_autoscale(False)
+        self._qtgui_number_sink_1_win = sip.wrapinstance(self.qtgui_number_sink_1.qwidget(), Qt.QWidget)
+        self.top_grid_layout.addWidget(self._qtgui_number_sink_1_win, 2, 1, 1, 1)
+        for r in range(2, 3):
+            self.top_grid_layout.setRowStretch(r, 1)
+        for c in range(1, 2):
             self.top_grid_layout.setColumnStretch(c, 1)
         self.qtgui_number_sink_0 = qtgui.number_sink(
             gr.sizeof_float,
@@ -367,14 +352,15 @@ class Full_server_process(gr.top_block, Qt.QWidget):
         self.digital_costas_loop_cc_0 = digital.costas_loop_cc(phase_bw, arity, False)
         self.digital_constellation_decoder_cb_0 = digital.constellation_decoder_cb(qpsk_mg.base())
         self.digital_chunks_to_symbols_xx_0 = digital.chunks_to_symbols_bc(qpsk_mg.points(), 1)
+        self.blocks_xor_xx_0 = blocks.xor_bb()
         self.blocks_unpack_k_bits_bb_0_0 = blocks.unpack_k_bits_bb(8)
         self.blocks_unpack_k_bits_bb_0 = blocks.unpack_k_bits_bb(2)
         self.blocks_packed_to_unpacked_xx_0 = blocks.packed_to_unpacked_bb(2, gr.GR_MSB_FIRST)
+        self.blocks_moving_average_xx_1 = blocks.moving_average_ff(10000, 0.0001, 4000, 1)
         self.blocks_moving_average_xx_0 = blocks.moving_average_ff(10000, 0.0001, 4000, 1)
         self.blocks_delay_0 = blocks.delay(gr.sizeof_char*1, delay)
         self.blocks_complex_to_mag_squared_0 = blocks.complex_to_mag_squared(1)
-        self.blocks_char_to_float_0_0_0 = blocks.char_to_float(1, 1)
-        self.blocks_char_to_float_0_0 = blocks.char_to_float(1, 1)
+        self.blocks_char_to_float_0_0_1 = blocks.char_to_float(1, 1)
         self.analog_random_source_x_0 = blocks.vector_source_b(list(map(int, numpy.random.randint(0, 256, 10000000))), True)
 
 
@@ -383,14 +369,15 @@ class Full_server_process(gr.top_block, Qt.QWidget):
         ##################################################
         self.connect((self.analog_random_source_x_0, 0), (self.blocks_packed_to_unpacked_xx_0, 0))
         self.connect((self.analog_random_source_x_0, 0), (self.blocks_unpack_k_bits_bb_0_0, 0))
-        self.connect((self.blocks_char_to_float_0_0, 0), (self.qtgui_time_sink_x_0, 0))
-        self.connect((self.blocks_char_to_float_0_0_0, 0), (self.qtgui_time_sink_x_0, 1))
+        self.connect((self.blocks_char_to_float_0_0_1, 0), (self.blocks_moving_average_xx_1, 0))
         self.connect((self.blocks_complex_to_mag_squared_0, 0), (self.blocks_moving_average_xx_0, 0))
-        self.connect((self.blocks_delay_0, 0), (self.blocks_char_to_float_0_0_0, 0))
+        self.connect((self.blocks_delay_0, 0), (self.blocks_xor_xx_0, 0))
         self.connect((self.blocks_moving_average_xx_0, 0), (self.qtgui_number_sink_0, 0))
+        self.connect((self.blocks_moving_average_xx_1, 0), (self.qtgui_number_sink_1, 0))
         self.connect((self.blocks_packed_to_unpacked_xx_0, 0), (self.digital_diff_encoder_bb_0, 0))
-        self.connect((self.blocks_unpack_k_bits_bb_0, 0), (self.blocks_char_to_float_0_0, 0))
+        self.connect((self.blocks_unpack_k_bits_bb_0, 0), (self.blocks_xor_xx_0, 1))
         self.connect((self.blocks_unpack_k_bits_bb_0_0, 0), (self.blocks_delay_0, 0))
+        self.connect((self.blocks_xor_xx_0, 0), (self.blocks_char_to_float_0_0_1, 0))
         self.connect((self.digital_chunks_to_symbols_xx_0, 0), (self.pfb_arb_resampler_xxx_0, 0))
         self.connect((self.digital_constellation_decoder_cb_0, 0), (self.digital_diff_decoder_bb_0_0, 0))
         self.connect((self.digital_costas_loop_cc_0, 0), (self.digital_constellation_decoder_cb_0, 0))
@@ -499,7 +486,6 @@ class Full_server_process(gr.top_block, Qt.QWidget):
         self.samp_rate = samp_rate
         self.qtgui_sink_x_1.set_frequency_range(self.freq, self.samp_rate)
         self.qtgui_sink_x_1_0.set_frequency_range(self.freq, self.samp_rate)
-        self.qtgui_time_sink_x_0.set_samp_rate(self.samp_rate)
 
     def get_rrc_taps_tx(self):
         return self.rrc_taps_tx
