@@ -19,7 +19,7 @@ ZMQ_RCVTIMEO = 100    # ms (kept, but we will use NOBLOCK drain)
 
 # -------- USRP --------
 TX_CHANNEL = 0
-TX_RATE    = 1000000
+TX_RATE    = 200000
 TX_FREQ    = 920e6
 TX_GAIN    = 47
 TX_BW      = 0
