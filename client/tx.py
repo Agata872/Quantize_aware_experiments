@@ -21,7 +21,7 @@ ZMQ_RCVTIMEO = 100    # ms (kept, but we will use NOBLOCK drain)
 TX_CHANNEL = 0
 TX_RATE    = 200000
 TX_FREQ    = 920e6
-TX_GAIN    = 50
+TX_GAIN    = 45
 TX_BW      = 0
 
 # -------- Streaming --------
