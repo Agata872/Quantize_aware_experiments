@@ -21,7 +21,7 @@ RX_CHANNEL = 0
 RX_RATE = 200000                  # samples per second
 RX_FREQ = 920e6                # Hz
 RX_GAIN = 50                   # dB
-RX_BW   = 0                    # 0 = do not set
+RX_BW   = 150e3                    # 0 = do not set
 
 # -------- Streaming --------
 RX_BUF_SAMPS = 4096            # UHD recv buffer size
