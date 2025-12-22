@@ -11,7 +11,7 @@ from collections import deque
 # =========================================================
 
 # -------- Network --------
-SERVER_IP = "192.108.2.61"
+SERVER_IP = "192.108.2.70"
 ZMQ_PORT_TX = 6001
 
 ZMQ_RCV_HWM  = 100
