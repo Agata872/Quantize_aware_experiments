@@ -1,3 +1,4 @@
+# ansible-playbook -i inventory.yaml -l Test pull_code.ym
 ---
 - name: Pull GitHub repo on ceiling
   hosts: Test
