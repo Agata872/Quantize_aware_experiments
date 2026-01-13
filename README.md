@@ -43,7 +43,7 @@ export PYTHONPATH="/usr/local/lib/python3.11/site-packages:$PYTHONPATH"
 2. **If do it on the ceiling Tiles:*
 
 ```bash
-export PYTHONPATH="/usr/local/lib/python3/dist-packages:$PYTHONPATH""
+export PYTHONPATH="/usr/local/lib/python3/dist-packages:$PYTHONPATH"
 ```
 ---
 
